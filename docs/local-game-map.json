@@ -1,0 +1,131 @@
+{
+  "generated_on": "2026-06-30",
+  "steam": {
+    "root": "C:\\Program Files (x86)\\Steam",
+    "library": "D:\\SteamLibrary",
+    "app_id": "3241660",
+    "app_name": "R.E.P.O.",
+    "build_id": "23363152",
+    "install_dir": "D:\\SteamLibrary\\steamapps\\common\\REPO",
+    "executable": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO.exe",
+    "managed_dir": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed",
+    "bepinex_in_steam_dir": false
+  },
+  "assemblies": {
+    "game": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\Assembly-CSharp.dll",
+    "photon_pun": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\PhotonUnityNetworking.dll",
+    "photon_realtime": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\PhotonRealtime.dll",
+    "photon_3unity3d": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\Photon3Unity3D.dll",
+    "steamworks": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\Facepunch.Steamworks.Win64.dll",
+    "websocket": "D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\websocket-sharp.dll"
+  },
+  "candidate_types": [
+    {
+      "name": "NetworkConnect",
+      "assembly": "Assembly-CSharp.dll",
+      "members": [
+        "Start",
+        "CreateLobby",
+        "OnConnectedToMaster",
+        "TryJoiningRoom",
+        "OnCreatedRoom",
+        "OnJoinedRoom",
+        "OnCreateRoomFailed",
+        "OnJoinRoomFailed",
+        "OnJoinRandomFailed",
+        "OnDisconnected",
+        "OnDestroy"
+      ]
+    },
+    {
+      "name": "NetworkManager",
+      "assembly": "Assembly-CSharp.dll",
+      "members": [
+        "Start",
+        "LeavePhotonRoom",
+        "OnPlayerEnteredRoom",
+        "OnPlayerLeftRoom",
+        "OnMasterClientSwitched",
+        "TriggerLeavePhotonRoomForced",
+        "OnDisconnected"
+      ]
+    },
+    {
+      "name": "RunManager",
+      "assembly": "Assembly-CSharp.dll",
+      "members": [
+        "ChangeLevel",
+        "RestartScene",
+        "UpdateLevel",
+        "LeaveToMainMenu"
+      ]
+    },
+    {
+      "name": "RunManagerPUN",
+      "assembly": "Assembly-CSharp.dll",
+      "members": [
+        "HostSteamLobby",
+        "SendJoinSteamLobby",
+        "JoinSteamLobbyRPC",
+        "UpdateLevelRPC"
+      ]
+    },
+    {
+      "name": "SteamManager",
+      "assembly": "Assembly-CSharp.dll",
+      "members": [
+        "JoinSteamLobby",
+        "HostLobby",
+        "LeaveLobby",
+        "UnlockLobby",
+        "LockLobby",
+        "JoinLobby",
+        "SetLobbyData",
+        "SendSteamAuthTicket",
+        "StartAutoJoiningLobby"
+      ]
+    }
+  ],
+  "photon_apis": {
+    "pun_version": "2.52",
+    "static_methods": [
+      "PhotonNetwork.ConnectUsingSettings",
+      "PhotonNetwork.Disconnect",
+      "PhotonNetwork.Reconnect",
+      "PhotonNetwork.ReconnectAndRejoin",
+      "PhotonNetwork.RejoinRoom",
+      "PhotonNetwork.JoinRoom",
+      "PhotonNetwork.JoinOrCreateRoom",
+      "PhotonNetwork.LeaveRoom"
+    ],
+    "state_members": [
+      "PhotonNetwork.NetworkingClient.State",
+      "PhotonNetwork.NetworkingClient.DisconnectedCause",
+      "PhotonNetwork.CurrentRoom",
+      "PhotonNetwork.CloudRegion",
+      "PhotonNetwork.IsMasterClient"
+    ]
+  },
+  "current_probe": {
+    "callbacks": [
+      "NetworkConnect.OnDisconnected:prefix",
+      "NetworkConnect.OnDisconnected:postfix",
+      "NetworkConnect.OnJoinedRoom:postfix",
+      "NetworkManager.OnDisconnected:prefix",
+      "NetworkManager.OnDisconnected:postfix"
+    ],
+    "config_keys": [
+      "Diagnostics.Enabled",
+      "Diagnostics.LogJoinState",
+      "Reconnect.ExperimentalReconnectEnabled",
+      "Reconnect.MaxReconnectAttempts",
+      "Reconnect.ReconnectAttemptDelaySeconds"
+    ],
+    "behavior_change": "diagnostics only; reconnect remains disabled"
+  },
+  "inspection_commands": [
+    "dotnet tool restore",
+    "dotnet tool run ilspycmd -- -l c --disable-updatecheck \"D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\Assembly-CSharp.dll\"",
+    "dotnet tool run ilspycmd -- --disable-updatecheck -r \"D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\" -t NetworkConnect \"D:\\SteamLibrary\\steamapps\\common\\REPO\\REPO_Data\\Managed\\Assembly-CSharp.dll\""
+  ]
+}

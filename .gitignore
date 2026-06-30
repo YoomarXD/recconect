@@ -1,0 +1,40 @@
+# Build outputs
+bin/
+obj/
+*.dll
+*.pdb
+*.mdb
+
+# Local package/build artifacts
+dist/
+artifacts/
+plugins/
+*.zip
+*.nupkg
+
+# IDE/editor state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# BepInEx/runtime logs and local installs
+BepInEx/
+doorstop_config.ini
+winhttp.dll
+LogOutput.log
+*.log
+
+# Unity/asset output if this later grows REPOLib content
+Library/
+Temp/
+Logs/
+UserSettings/
+*.repobundle
+
+# OS files
+Thumbs.db
+Desktop.ini

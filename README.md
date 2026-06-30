@@ -26,6 +26,20 @@ bin\Debug\netstandard2.1\Recconect.dll
 
 See `docs/local-game-map.md` and `docs/local-game-map.json` for the current API map.
 
+## Local Deploy
+
+```powershell
+.\scripts\deploy-local.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -Configuration Debug
+```
+
+The deploy script builds the project and copies `Recconect.dll` to:
+
+```text
+<profile>\BepInEx\plugins\YoomarXD-Recconect\Recconect.dll
+```
+
+Use a disposable mod-manager profile for reconnect testing.
+
 ## Runtime Config
 
 The first launch creates a BepInEx config file for:
@@ -46,4 +60,8 @@ Reconnect defaults to no behavior change. When enabled, room creators also set n
 
 ## Packaging
 
-`manifest.json` is a Thunderstore skeleton for later packaging. Validate it before publishing and include only release artifacts in a package zip.
+```powershell
+.\scripts\package-thunderstore.ps1 -Configuration Release
+```
+
+This creates `dist\Recconect-0.1.0.zip`. Publishing still needs a valid `icon.png`; the script warns when one is missing.

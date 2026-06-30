@@ -43,3 +43,9 @@ Current implementation:
 - `NetworkManager.OnMasterClientSwitched` forces leave, so host loss may be unrecoverable without deeper host migration work.
 - Scene loading uses `PhotonNetwork.AutomaticallySyncScene` and `PhotonNetwork.LoadLevel`; reconnecting mid-load may require special handling.
 - Steam lobby metadata stores Photon room name, region, build name, and password flag; stale metadata can send clients into the wrong recovery path.
+
+## Tooling
+
+- `scripts/deploy-local.ps1` builds and copies the DLL into a supplied BepInEx plugins directory.
+- `scripts/package-thunderstore.ps1` builds a release zip under `dist/`.
+- Thunderstore publishing still requires a valid `icon.png`.

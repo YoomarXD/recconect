@@ -2,7 +2,7 @@
 
 Recconect is an early R.E.P.O. BepInEx/Harmony mod project focused on reconnect support for unstable networks.
 
-Current status: project initialized, builds cleanly, and includes disconnect probe patches that log Photon and Steam lobby state from `NetworkConnect` and `NetworkManager`. Actual reconnect behavior is intentionally not enabled yet.
+Current status: project initialized, builds cleanly, logs Photon and Steam lobby state from `NetworkConnect` and `NetworkManager`, and includes opt-in experimental reconnect attempts. Reconnect behavior is disabled by default.
 
 ## Build
 
@@ -33,10 +33,16 @@ The first launch creates a BepInEx config file for:
 - `Diagnostics.Enabled`
 - `Diagnostics.LogJoinState`
 - `Reconnect.ExperimentalReconnectEnabled`
+- `Reconnect.ConfigureRoomTtlOnCreate`
+- `Reconnect.AllowHostReconnect`
+- `Reconnect.PlayerTtlMilliseconds`
+- `Reconnect.EmptyRoomTtlMilliseconds`
 - `Reconnect.MaxReconnectAttempts`
 - `Reconnect.ReconnectAttemptDelaySeconds`
+- `Reconnect.ReconnectAttemptTimeoutSeconds`
+- `Reconnect.EligibleDisconnectCauses`
 
-Reconnect options are reserved and default to no behavior change.
+Reconnect defaults to no behavior change. When enabled, room creators also set nonzero Photon room TTL values so rejoin APIs have a chance to work.
 
 ## Packaging
 

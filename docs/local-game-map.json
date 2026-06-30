@@ -118,10 +118,25 @@
       "Diagnostics.Enabled",
       "Diagnostics.LogJoinState",
       "Reconnect.ExperimentalReconnectEnabled",
+      "Reconnect.ConfigureRoomTtlOnCreate",
+      "Reconnect.AllowHostReconnect",
+      "Reconnect.PlayerTtlMilliseconds",
+      "Reconnect.EmptyRoomTtlMilliseconds",
       "Reconnect.MaxReconnectAttempts",
-      "Reconnect.ReconnectAttemptDelaySeconds"
+      "Reconnect.ReconnectAttemptDelaySeconds",
+      "Reconnect.ReconnectAttemptTimeoutSeconds",
+      "Reconnect.EligibleDisconnectCauses"
     ],
-    "behavior_change": "diagnostics only; reconnect remains disabled"
+    "behavior_change": "experimental reconnect is implemented but disabled by default",
+    "reconnect_strategy": [
+      "remember last successful NetworkConnect.OnJoinedRoom state",
+      "when opt-in reconnect is enabled, set PlayerTtl and EmptyRoomTtl on created Photon rooms",
+      "suppress vanilla disconnect handling only when opt-in reconnect starts or is active",
+      "try PhotonNetwork.ReconnectAndRejoin",
+      "fallback to PhotonNetwork.Reconnect then PhotonNetwork.RejoinRoom when connected to master",
+      "on total failure call PhotonNetwork.Disconnect, SteamManager.LeaveLobby, and RunManager.LeaveToMainMenu",
+      "block host reconnect unless Reconnect.AllowHostReconnect is true"
+    ]
   },
   "inspection_commands": [
     "dotnet tool restore",

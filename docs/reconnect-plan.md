@@ -14,21 +14,32 @@ Let a client recover from transient network loss without immediately being pushe
 
 ## Phase 2: Passive Recovery Prototype
 
-- Add BepInEx config for enable/disable, max attempts, attempt delay, and allowed `DisconnectCause` values.
-- For client-side timeouts, try `PhotonNetwork.ReconnectAndRejoin()` only while cached room/lobby data is still coherent.
+- Add BepInEx config for enable/disable, max attempts, attempt delay, attempt timeout, host reconnect policy, and allowed `DisconnectCause` values.
+- For client-side timeouts, try `PhotonNetwork.ReconnectAndRejoin()` only while cached room data is still coherent.
 - Never run reconnect attempts for explicit leave, kick, ban, version mismatch, closed lobby, application quit, or host-controlled scene transition.
 - Keep default behavior as vanilla until the user opts in.
 
+Current implementation:
+
+- `Reconnect.ExperimentalReconnectEnabled=false` preserves vanilla behavior.
+- When enabled by a room creator, `PhotonNetwork.CreateRoom`, `JoinOrCreateRoom`, and `JoinRandomOrCreateRoom` receive configured `PlayerTtl` and `EmptyRoomTtl` values.
+- `NetworkConnect.OnJoinedRoom()` stores the last successful Photon room and whether the local client was master.
+- Eligible disconnect prefixes suppress vanilla disconnect handling only while an opt-in reconnect coroutine is active.
+- The coroutine tries `PhotonNetwork.ReconnectAndRejoin()`, then falls back to `Reconnect()` plus `RejoinRoom(roomName)` if connected to master but not in room.
+- If all attempts fail, it explicitly falls back to `PhotonNetwork.Disconnect()`, `SteamManager.LeaveLobby()`, and `RunManager.LeaveToMainMenu()`.
+- Host reconnect is blocked unless `Reconnect.AllowHostReconnect=true`.
+
 ## Phase 3: State Restoration
 
-- Verify whether Photon actor inactivity is enabled by the game's room options.
-- If `ReconnectAndRejoin()` fails, test fallback to `Reconnect()` then `RejoinRoom(roomName)`.
+- Verify in-game whether configured Photon actor inactivity is accepted by R.E.P.O. public/private room flows.
+- If `ReconnectAndRejoin()` fails despite nonzero `PlayerTtl`, test fallback to `Reconnect()` then `RejoinRoom(roomName)`.
 - Preserve Steam lobby membership when possible; avoid `SteamManager.LeaveLobby()` during retry windows.
 - If recovery fails, allow vanilla disconnect UI and leave-to-menu flow.
 
 ## Known Risks
 
 - `NetworkConnect.OnDisconnected` and `NetworkManager.OnDisconnected` both currently push toward terminal disconnect behavior.
+- Harmony prefixes now suppress those terminal paths only during opt-in reconnect attempts; this needs in-game validation across callback order.
 - `NetworkManager.OnMasterClientSwitched` forces leave, so host loss may be unrecoverable without deeper host migration work.
 - Scene loading uses `PhotonNetwork.AutomaticallySyncScene` and `PhotonNetwork.LoadLevel`; reconnecting mid-load may require special handling.
 - Steam lobby metadata stores Photon room name, region, build name, and password flag; stale metadata can send clients into the wrong recovery path.

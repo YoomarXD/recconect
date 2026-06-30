@@ -88,7 +88,22 @@ The mod currently logs Photon and Steam lobby state from:
 - `NetworkConnect.OnJoinedRoom()`
 - `NetworkManager.OnDisconnected(DisconnectCause cause)`
 
-This is intentionally diagnostic. Rejoin behavior should be added only after logs confirm which callback fires first, what state survives after a timeout, and whether Steam lobby metadata is still valid.
+This is intentionally diagnostic by default. Opt-in reconnect attempts are available through config, but should be treated as experimental until logs confirm which callback fires first, what state survives after a timeout, and whether Steam lobby metadata is still valid.
+
+## Current Reconnect Prototype
+
+The reconnect prototype is disabled by default through `Reconnect.ExperimentalReconnectEnabled=false`.
+
+When enabled:
+
+1. `NetworkConnect.OnJoinedRoom()` remembers the last Photon room name, region, local actor, local user id, and whether the local client was master.
+2. `NetworkConnect.OnDisconnected` and `NetworkManager.OnDisconnected` prefixes check the disconnect cause.
+3. Explicit terminal causes such as client/server logic disconnects, authentication failure, region failure, CCU limits, and operation limits are excluded.
+4. Host reconnect is blocked unless `Reconnect.AllowHostReconnect=true`.
+5. If this client creates a room while reconnect is enabled, `PhotonNetwork.CreateRoom`, `JoinOrCreateRoom`, and `JoinRandomOrCreateRoom` get configured `PlayerTtl` and `EmptyRoomTtl` values.
+6. The reconnect coroutine tries `PhotonNetwork.ReconnectAndRejoin()`.
+7. If the client reconnects to master but is not in a room, it tries `PhotonNetwork.RejoinRoom(roomName)` once per attempt.
+8. If attempts fail, the coordinator calls `PhotonNetwork.Disconnect()`, `SteamManager.LeaveLobby()`, and `RunManager.LeaveToMainMenu()` as a fallback terminal path.
 
 ## Useful Inspection Commands
 

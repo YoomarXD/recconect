@@ -21,7 +21,7 @@
   <!-- Package References -->
   <ItemGroup>
     <None Remove="plugins\**;dist\**;artifacts\**" />
-    <None Update=".gitattributes;.gitignore;AGENTS.md;docs\**;scripts\**">
+    <None Update=".gitattributes;.gitignore;AGENTS.md;*.zip;docs\**;scripts\**">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
       <CopyToPluginOutputDirectory>Never</CopyToPluginOutputDirectory>
     </None>

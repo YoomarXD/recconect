@@ -6,6 +6,9 @@ param(
     [string] $ProfileName = '',
     [string] $ProfilePath = '',
     [string] $BepInExPluginsPath = '',
+    [string] $GamePath = '',
+    [string] $BepInExZipPath = '',
+    [switch] $ListGameInstalls,
 
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Debug',
@@ -24,6 +27,7 @@ $ErrorActionPreference = 'Stop'
 $PluginGuid = 'com.yoomarxd.recconect'
 $PluginFolderName = 'YoomarXD-Recconect'
 $PluginDllName = 'Recconect.dll'
+$DefaultBepInExZipName = 'BepInEx_win_x64_5.4.23.5.zip'
 
 function Get-RepoRoot {
     $scriptRoot = Resolve-Path -LiteralPath $PSScriptRoot
@@ -48,6 +52,35 @@ function Get-BundledDllPath {
 
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    return $null
+}
+
+function Get-BepInExZipPath {
+    param(
+        [string] $RequestedZipPath,
+        [string] $RepoRoot
+    )
+
+    $candidates = @()
+    if ($RequestedZipPath) {
+        $candidates += $RequestedZipPath
+    }
+
+    if ($RepoRoot) {
+        $candidates += (Join-Path $RepoRoot $DefaultBepInExZipName)
+    }
+
+    $candidates += @(
+        (Join-Path $PSScriptRoot $DefaultBepInExZipName),
+        (Join-Path (Join-Path $PSScriptRoot '..') $DefaultBepInExZipName)
+    )
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
             return (Resolve-Path -LiteralPath $candidate).Path
         }
     }
@@ -162,6 +195,67 @@ function Find-RecconectProfiles {
     return $profiles | Sort-Object Source, Name -Unique
 }
 
+function Find-RepoGameInstalls {
+    $steamRoots = @()
+    $regPaths = @(
+        'HKCU:\Software\Valve\Steam',
+        'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam',
+        'HKLM:\SOFTWARE\Valve\Steam'
+    )
+
+    foreach ($path in $regPaths) {
+        try {
+            $props = Get-ItemProperty -LiteralPath $path -ErrorAction Stop
+            foreach ($name in 'SteamPath', 'InstallPath') {
+                if ($props.$name) {
+                    $steamRoots += $props.$name
+                }
+            }
+        } catch {}
+    }
+
+    $steamRoots += @('C:\Program Files (x86)\Steam', 'C:\Program Files\Steam')
+    $steamRoots = $steamRoots |
+        Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
+        ForEach-Object { (Resolve-Path -LiteralPath $_).Path } |
+        Select-Object -Unique
+
+    $libraryRoots = New-Object System.Collections.Generic.List[string]
+    foreach ($steamRoot in $steamRoots) {
+        $libraryRoots.Add($steamRoot)
+        $vdf = Join-Path $steamRoot 'steamapps\libraryfolders.vdf'
+        if (Test-Path -LiteralPath $vdf) {
+            $content = Get-Content -Raw -LiteralPath $vdf
+            [regex]::Matches($content, '"path"\s+"([^"]+)"') | ForEach-Object {
+                $libraryRoots.Add(($_.Groups[1].Value -replace '\\\\', '\'))
+            }
+        }
+    }
+
+    $installs = New-Object System.Collections.Generic.List[object]
+    foreach ($libraryRoot in ($libraryRoots | Select-Object -Unique)) {
+        $manifest = Join-Path $libraryRoot 'steamapps\appmanifest_3241660.acf'
+        if (-not (Test-Path -LiteralPath $manifest)) {
+            continue
+        }
+
+        $manifestText = Get-Content -Raw -LiteralPath $manifest
+        $installDir = if ($manifestText -match '"installdir"\s+"([^"]+)"') { $Matches[1] } else { 'REPO' }
+        $gameDir = Join-Path (Join-Path $libraryRoot 'steamapps\common') $installDir
+        $exe = Join-Path $gameDir 'REPO.exe'
+        if (Test-Path -LiteralPath $exe) {
+            $installs.Add([pscustomobject]@{
+                Name = 'R.E.P.O.'
+                GamePath = (Resolve-Path -LiteralPath $gameDir).Path
+                ExePath = (Resolve-Path -LiteralPath $exe).Path
+                Source = $manifest
+            })
+        }
+    }
+
+    return $installs | Sort-Object GamePath -Unique
+}
+
 function Resolve-InstallTarget {
     param(
         [string] $RequestedPluginsPath,
@@ -206,6 +300,78 @@ function Resolve-InstallTarget {
     }
 
     return $profiles[0]
+}
+
+function Resolve-GameTarget {
+    param([string] $RequestedGamePath)
+
+    if ($RequestedGamePath) {
+        $resolved = Resolve-Path -LiteralPath $RequestedGamePath
+        $exe = Join-Path $resolved.Path 'REPO.exe'
+        if (-not (Test-Path -LiteralPath $exe)) {
+            throw "GamePath does not look like the R.E.P.O. game folder because REPO.exe was not found: $($resolved.Path)"
+        }
+
+        return [pscustomobject]@{
+            Name = 'R.E.P.O.'
+            GamePath = $resolved.Path
+            BepInExPath = Join-Path $resolved.Path 'BepInEx'
+            PluginsPath = Join-Path $resolved.Path 'BepInEx\plugins'
+            Source = 'Argument'
+        }
+    }
+
+    $installs = @(Find-RepoGameInstalls)
+    if ($installs.Count -eq 0) {
+        throw "No Steam R.E.P.O. install was found. Pass -GamePath with the folder containing REPO.exe."
+    }
+
+    if ($installs.Count -gt 1) {
+        $installs | Format-Table GamePath, Source -AutoSize | Out-Host
+        throw "Multiple R.E.P.O. installs matched. Re-run with -GamePath."
+    }
+
+    return [pscustomobject]@{
+        Name = $installs[0].Name
+        GamePath = $installs[0].GamePath
+        BepInExPath = Join-Path $installs[0].GamePath 'BepInEx'
+        PluginsPath = Join-Path $installs[0].GamePath 'BepInEx\plugins'
+        Source = $installs[0].Source
+    }
+}
+
+function Install-BepInEx {
+    param(
+        [object] $GameTarget,
+        [string] $ZipPath,
+        [bool] $Overwrite
+    )
+
+    if (-not $ZipPath) {
+        throw "BepInEx is not installed and no $DefaultBepInExZipName was found. Pass -BepInExZipPath."
+    }
+
+    $gamePath = Resolve-Path -LiteralPath $GameTarget.GamePath
+    $exe = Join-Path $gamePath.Path 'REPO.exe'
+    if (-not (Test-Path -LiteralPath $exe)) {
+        throw "Refusing to install BepInEx outside a R.E.P.O. game folder: $($gamePath.Path)"
+    }
+
+    $alreadyInstalled = (Test-Path -LiteralPath (Join-Path $gamePath.Path 'BepInEx\core\BepInEx.dll')) -and
+        (Test-Path -LiteralPath (Join-Path $gamePath.Path 'winhttp.dll'))
+
+    if ($alreadyInstalled -and -not $Overwrite) {
+        Write-Host "BepInEx already appears installed at: $($gamePath.Path)"
+        return
+    }
+
+    if ($PSCmdlet.ShouldProcess($gamePath.Path, "Extract BepInEx from $ZipPath")) {
+        Expand-Archive -LiteralPath $ZipPath -DestinationPath $gamePath.Path -Force
+        New-Item -ItemType Directory -Force -Path (Join-Path $gamePath.Path 'BepInEx\plugins') | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $gamePath.Path 'BepInEx\config') | Out-Null
+    }
+
+    Write-Host "Installed BepInEx to: $($gamePath.Path)"
 }
 
 function Install-Recconect {
@@ -255,7 +421,8 @@ function New-FriendZip {
     param(
         [string] $DllPath,
         [string] $Mode,
-        [string] $Destination
+        [string] $Destination,
+        [string] $BepInExZip
     )
 
     $repoRoot = Get-RepoRoot
@@ -281,6 +448,9 @@ function New-FriendZip {
     Copy-Item -LiteralPath $DllPath -Destination (Join-Path $stageDir $PluginDllName)
     Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $stageDir 'Install-Recconect.ps1')
     New-RecconectConfigText -Mode $Mode | Set-Content -LiteralPath (Join-Path $stageDir "$PluginGuid.cfg") -Encoding UTF8
+    if ($BepInExZip) {
+        Copy-Item -LiteralPath $BepInExZip -Destination (Join-Path $stageDir $DefaultBepInExZipName)
+    }
 
     @"
 # Recconect Friend Test Install
@@ -299,6 +469,10 @@ If profile discovery fails, pass the exact path:
 
    .\Install-Recconect.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -ConfigMode $Mode
 
+If BepInEx is not installed, pass the game folder instead:
+
+   .\Install-Recconect.ps1 -GamePath "D:\SteamLibrary\steamapps\common\REPO" -ConfigMode $Mode
+
 Do not test host disconnects yet. Test client network interruption first.
 "@ | Set-Content -LiteralPath (Join-Path $stageDir 'README-FRIEND-INSTALL.txt') -Encoding UTF8
 
@@ -312,6 +486,7 @@ Do not test host disconnects yet. Test client network interruption first.
 }
 
 $repoRoot = Get-RepoRoot
+$bepInExZip = Get-BepInExZipPath -RequestedZipPath $BepInExZipPath -RepoRoot $repoRoot
 
 if ($ListProfiles) {
     $profiles = @(Find-RecconectProfiles -UseDeepScan $DeepScan)
@@ -323,18 +498,39 @@ if ($ListProfiles) {
     return
 }
 
+if ($ListGameInstalls) {
+    $installs = @(Find-RepoGameInstalls)
+    if ($installs.Count -eq 0) {
+        Write-Host "No Steam R.E.P.O. installs found."
+    } else {
+        $installs | Format-Table GamePath, Source -AutoSize
+    }
+    return
+}
+
 $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
 
 if ($CreateFriendZip) {
-    New-FriendZip -DllPath $dllPath -Mode $ConfigMode -Destination $FriendZipPath
+    New-FriendZip -DllPath $dllPath -Mode $ConfigMode -Destination $FriendZipPath -BepInExZip $bepInExZip
 }
 
-if ($BepInExPluginsPath -or $ProfilePath -or $ProfileName -or -not $CreateFriendZip) {
+if ($GamePath -or ((-not $BepInExPluginsPath) -and (-not $ProfilePath) -and (-not $ProfileName) -and (-not $CreateFriendZip))) {
+    $gameTarget = Resolve-GameTarget -RequestedGamePath $GamePath
+    Install-BepInEx -GameTarget $gameTarget -ZipPath $bepInExZip -Overwrite:$Force
+    Install-Recconect -Target $gameTarget -DllPath $dllPath -Mode $ConfigMode -Overwrite:$Force
+    return
+}
+
+if ($BepInExPluginsPath -or $ProfilePath -or $ProfileName) {
     $target = Resolve-InstallTarget `
         -RequestedPluginsPath $BepInExPluginsPath `
         -RequestedProfilePath $ProfilePath `
         -RequestedProfileName $ProfileName `
         -UseDeepScan:$DeepScan
+
+    if (-not (Test-Path -LiteralPath $target.BepInExPath)) {
+        throw "Target profile does not have BepInEx installed: $($target.BepInExPath). Use -GamePath to install into the game folder, or install BepInExPack in the profile first."
+    }
 
     Install-Recconect -Target $target -DllPath $dllPath -Mode $ConfigMode -Overwrite:$Force
 }

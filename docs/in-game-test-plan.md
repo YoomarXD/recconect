@@ -16,17 +16,26 @@ Use a separate r2modman/Gale profile or a disposable BepInEx install. Do not tes
    ```powershell
    .\scripts\install-recconect.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -ConfigMode Diagnostics
    ```
-4. To make a friend zip:
+4. If BepInEx is not installed, install into the game folder so the installer can extract the bundled BepInEx archive:
+   ```powershell
+   .\scripts\install-recconect.ps1 -ListGameInstalls
+   .\scripts\install-recconect.ps1 -GamePath "D:\SteamLibrary\steamapps\common\REPO" -ConfigMode Diagnostics
+   ```
+5. To make a friend zip:
    ```powershell
    .\scripts\install-recconect.ps1 -CreateFriendZip -ConfigMode Experimental -FriendZipPath .\dist\Recconect-friend-test.zip
    ```
-5. Your friend extracts the zip and runs:
+6. Your friend extracts the zip and runs one of these:
    ```powershell
    .\Install-Recconect.ps1 -ListProfiles
    .\Install-Recconect.ps1 -ProfileName "ReconnectTest" -ConfigMode Experimental
    ```
-6. Launch once with default config and verify the mod loads.
-7. Close the game and verify the generated config:
+   If they do not have BepInEx installed:
+   ```powershell
+   .\Install-Recconect.ps1 -GamePath "<their R.E.P.O. folder>" -ConfigMode Experimental
+   ```
+7. Launch once with default config and verify the mod loads.
+8. Close the game and verify the generated config:
    - `Diagnostics.Enabled=true`
    - `Diagnostics.LogJoinState=true`
    - `Reconnect.ExperimentalReconnectEnabled=false` for diagnostics-only runs.

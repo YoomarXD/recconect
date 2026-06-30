@@ -47,6 +47,7 @@ Current implementation:
 ## Tooling
 
 - `scripts/install-recconect.ps1` discovers profiles, builds or uses a bundled DLL, installs the mod, writes diagnostics/experimental config, and can create a friend zip.
+- If no BepInEx profile exists, the installer can extract `BepInEx_win_x64_5.4.23.5.zip` into the R.E.P.O. game folder and then install the mod.
 - `scripts/deploy-local.ps1` builds and copies the DLL into a supplied BepInEx plugins directory.
 - `scripts/package-thunderstore.ps1` builds a release zip under `dist/`.
 - Thunderstore publishing still requires a valid `icon.png`.

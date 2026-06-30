@@ -53,7 +53,20 @@ To create a zip for a friend:
 .\scripts\install-recconect.ps1 -CreateFriendZip -ConfigMode Experimental -FriendZipPath .\dist\Recconect-friend-test.zip
 ```
 
-The zip contains `Recconect.dll`, the installer, a config file, and friend instructions.
+The zip contains `Recconect.dll`, the installer, a config file, the bundled BepInEx zip when available, and friend instructions.
+
+If BepInEx is not installed, install directly into the game folder instead of a profile:
+
+```powershell
+.\scripts\install-recconect.ps1 -ListGameInstalls
+.\scripts\install-recconect.ps1 -GamePath "D:\SteamLibrary\steamapps\common\REPO" -ConfigMode Diagnostics
+```
+
+When run from the repo, the installer uses `BepInEx_win_x64_5.4.23.5.zip` if BepInEx is missing. A friend zip includes that archive too, so your friend can run:
+
+```powershell
+.\Install-Recconect.ps1 -GamePath "<their R.E.P.O. folder>" -ConfigMode Experimental
+```
 
 The lower-level deploy script is still available:
 

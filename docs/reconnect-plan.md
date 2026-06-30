@@ -46,6 +46,7 @@ Current implementation:
 
 ## Tooling
 
+- `scripts/install-recconect.ps1` discovers profiles, builds or uses a bundled DLL, installs the mod, writes diagnostics/experimental config, and can create a friend zip.
 - `scripts/deploy-local.ps1` builds and copies the DLL into a supplied BepInEx plugins directory.
 - `scripts/package-thunderstore.ps1` builds a release zip under `dist/`.
 - Thunderstore publishing still requires a valid `icon.png`.

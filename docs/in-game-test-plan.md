@@ -4,10 +4,29 @@ Use a separate r2modman/Gale profile or a disposable BepInEx install. Do not tes
 
 ## Setup
 
-1. Build the mod with `dotnet build .\Recconect.sln`.
-2. Deploy with `.\scripts\deploy-local.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -Configuration Debug`.
-3. Launch once with default config and verify the mod loads.
-4. Close the game and edit the generated config:
+1. List detected profiles:
+   ```powershell
+   .\scripts\install-recconect.ps1 -ListProfiles
+   ```
+2. Install diagnostics mode:
+   ```powershell
+   .\scripts\install-recconect.ps1 -ProfileName "ReconnectTest" -ConfigMode Diagnostics
+   ```
+3. If profile discovery fails, pass the exact path:
+   ```powershell
+   .\scripts\install-recconect.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -ConfigMode Diagnostics
+   ```
+4. To make a friend zip:
+   ```powershell
+   .\scripts\install-recconect.ps1 -CreateFriendZip -ConfigMode Experimental -FriendZipPath .\dist\Recconect-friend-test.zip
+   ```
+5. Your friend extracts the zip and runs:
+   ```powershell
+   .\Install-Recconect.ps1 -ListProfiles
+   .\Install-Recconect.ps1 -ProfileName "ReconnectTest" -ConfigMode Experimental
+   ```
+6. Launch once with default config and verify the mod loads.
+7. Close the game and verify the generated config:
    - `Diagnostics.Enabled=true`
    - `Diagnostics.LogJoinState=true`
    - `Reconnect.ExperimentalReconnectEnabled=false` for diagnostics-only runs.

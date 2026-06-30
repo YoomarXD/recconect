@@ -28,6 +28,35 @@ See `docs/local-game-map.md` and `docs/local-game-map.json` for the current API 
 
 ## Local Deploy
 
+The graceful installer is the preferred test path:
+
+```powershell
+.\scripts\install-recconect.ps1 -ListProfiles
+.\scripts\install-recconect.ps1 -ProfileName "ReconnectTest" -ConfigMode Diagnostics
+```
+
+For the experimental reconnect pass:
+
+```powershell
+.\scripts\install-recconect.ps1 -ProfileName "ReconnectTest" -ConfigMode Experimental
+```
+
+If profile discovery does not find your manager profile, pass the exact plugins path:
+
+```powershell
+.\scripts\install-recconect.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -ConfigMode Diagnostics
+```
+
+To create a zip for a friend:
+
+```powershell
+.\scripts\install-recconect.ps1 -CreateFriendZip -ConfigMode Experimental -FriendZipPath .\dist\Recconect-friend-test.zip
+```
+
+The zip contains `Recconect.dll`, the installer, a config file, and friend instructions.
+
+The lower-level deploy script is still available:
+
 ```powershell
 .\scripts\deploy-local.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -Configuration Debug
 ```

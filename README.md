@@ -6,6 +6,12 @@ Current status: project initialized, builds cleanly, logs Photon and Steam lobby
 
 ## Build
 
+If the .NET SDK is missing, install it with:
+
+```powershell
+winget install --id Microsoft.DotNet.SDK.8 --exact --source winget --accept-package-agreements --accept-source-agreements
+```
+
 ```powershell
 dotnet tool restore
 dotnet build .\Recconect.sln
@@ -62,11 +68,19 @@ If BepInEx is not installed, install directly into the game folder instead of a 
 .\scripts\install-recconect.ps1 -GamePath "D:\SteamLibrary\steamapps\common\REPO" -ConfigMode Diagnostics
 ```
 
+If your machine does not have the .NET SDK, let the installer install it before building:
+
+```powershell
+.\scripts\install-recconect.ps1 -GamePath "D:\SteamLibrary\steamapps\common\REPO" -ConfigMode Diagnostics -InstallDotNetSdk
+```
+
 When run from the repo, the installer uses `BepInEx_win_x64_5.4.23.5.zip` if BepInEx is missing. A friend zip includes that archive too, so your friend can run:
 
 ```powershell
 .\Install-Recconect.ps1 -GamePath "<their R.E.P.O. folder>" -ConfigMode Experimental
 ```
+
+The friend zip includes a prebuilt DLL, so your friend normally does not need .NET.
 
 The lower-level deploy script is still available:
 

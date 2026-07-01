@@ -4,28 +4,33 @@ Use a separate r2modman/Gale profile or a disposable BepInEx install. Do not tes
 
 ## Setup
 
-1. List detected profiles:
+1. If installing from a cloned repo and .NET is missing, either install it manually:
+   ```powershell
+   winget install --id Microsoft.DotNet.SDK.8 --exact --source winget --accept-package-agreements --accept-source-agreements
+   ```
+   Or add `-InstallDotNetSdk` to the installer command.
+2. List detected profiles:
    ```powershell
    .\scripts\install-recconect.ps1 -ListProfiles
    ```
-2. Install diagnostics mode:
+3. Install diagnostics mode:
    ```powershell
    .\scripts\install-recconect.ps1 -ProfileName "ReconnectTest" -ConfigMode Diagnostics
    ```
-3. If profile discovery fails, pass the exact path:
+4. If profile discovery fails, pass the exact path:
    ```powershell
    .\scripts\install-recconect.ps1 -BepInExPluginsPath "<profile>\BepInEx\plugins" -ConfigMode Diagnostics
    ```
-4. If BepInEx is not installed, install into the game folder so the installer can extract the bundled BepInEx archive:
+5. If BepInEx is not installed, install into the game folder so the installer can extract the bundled BepInEx archive:
    ```powershell
    .\scripts\install-recconect.ps1 -ListGameInstalls
    .\scripts\install-recconect.ps1 -GamePath "D:\SteamLibrary\steamapps\common\REPO" -ConfigMode Diagnostics
    ```
-5. To make a friend zip:
+6. To make a friend zip:
    ```powershell
    .\scripts\install-recconect.ps1 -CreateFriendZip -ConfigMode Experimental -FriendZipPath .\dist\Recconect-friend-test.zip
    ```
-6. Your friend extracts the zip and runs one of these:
+7. Your friend extracts the zip and runs one of these:
    ```powershell
    .\Install-Recconect.ps1 -ListProfiles
    .\Install-Recconect.ps1 -ProfileName "ReconnectTest" -ConfigMode Experimental
@@ -34,8 +39,8 @@ Use a separate r2modman/Gale profile or a disposable BepInEx install. Do not tes
    ```powershell
    .\Install-Recconect.ps1 -GamePath "<their R.E.P.O. folder>" -ConfigMode Experimental
    ```
-7. Launch once with default config and verify the mod loads.
-8. Close the game and verify the generated config:
+8. Launch once with default config and verify the mod loads.
+9. Close the game and verify the generated config:
    - `Diagnostics.Enabled=true`
    - `Diagnostics.LogJoinState=true`
    - `Reconnect.ExperimentalReconnectEnabled=false` for diagnostics-only runs.

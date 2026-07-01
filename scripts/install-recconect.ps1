@@ -17,6 +17,7 @@ param(
     [string] $ConfigMode = 'Diagnostics',
 
     [switch] $NoBuild,
+    [switch] $InstallDotNetSdk,
     [switch] $CreateFriendZip,
     [switch] $DisableRecconect,
     [switch] $EnableRecconect,
@@ -90,17 +91,66 @@ function Get-BepInExZipPath {
     return $null
 }
 
+function Get-DotNetCommand {
+    $command = Get-Command dotnet.exe -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    $defaultPath = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
+    if (Test-Path -LiteralPath $defaultPath) {
+        return $defaultPath
+    }
+
+    return $null
+}
+
+function Ensure-DotNetSdk {
+    param([bool] $AllowInstall)
+
+    $dotnet = Get-DotNetCommand
+    if ($dotnet) {
+        return $dotnet
+    }
+
+    $installCommand = 'winget install --id Microsoft.DotNet.SDK.8 --exact --source winget --accept-package-agreements --accept-source-agreements'
+
+    if (-not $AllowInstall) {
+        throw "The .NET SDK is required to build from source. Install it with: $installCommand`nThen rerun this script, or rerun with -InstallDotNetSdk."
+    }
+
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        throw "winget was not found. Install the .NET 8 SDK manually, then rerun this script."
+    }
+
+    Write-Host "Installing .NET 8 SDK with winget..."
+    & $winget.Source install --id Microsoft.DotNet.SDK.8 --exact --source winget --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -ne 0) {
+        throw "winget failed to install Microsoft.DotNet.SDK.8 with exit code $LASTEXITCODE."
+    }
+
+    $dotnet = Get-DotNetCommand
+    if (-not $dotnet) {
+        throw "The .NET SDK installer completed, but dotnet.exe was not found in this PowerShell session. Open a new PowerShell window and rerun the install command."
+    }
+
+    return $dotnet
+}
+
 function Get-BuiltDllPath {
     param(
         [string] $RepoRoot,
         [string] $BuildConfiguration,
-        [bool] $SkipBuild
+        [bool] $SkipBuild,
+        [bool] $AllowDotNetInstall
     )
 
     if ($RepoRoot) {
         $solution = Join-Path $RepoRoot 'Recconect.sln'
         if (-not $SkipBuild) {
-            $buildOutput = & dotnet build $solution -c $BuildConfiguration 2>&1
+            $dotnet = Ensure-DotNetSdk -AllowInstall:$AllowDotNetInstall
+            $buildOutput = & $dotnet build $solution -c $BuildConfiguration 2>&1
             $buildOutput | ForEach-Object { Write-Host $_ }
             if ($LASTEXITCODE -ne 0) {
                 throw "dotnet build failed with exit code $LASTEXITCODE"
@@ -549,7 +599,7 @@ if ($GamePath -or ((-not $BepInExPluginsPath) -and (-not $ProfilePath) -and (-no
         return
     }
 
-    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
+    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild -AllowDotNetInstall:$InstallDotNetSdk
     Install-BepInEx -GameTarget $gameTarget -ZipPath $bepInExZip -Overwrite:$Force
     Install-Recconect -Target $gameTarget -DllPath $dllPath -Mode $ConfigMode -Overwrite:$Force
     return
@@ -571,11 +621,11 @@ if ($BepInExPluginsPath -or $ProfilePath -or $ProfileName) {
         return
     }
 
-    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
+    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild -AllowDotNetInstall:$InstallDotNetSdk
     Install-Recconect -Target $target -DllPath $dllPath -Mode $ConfigMode -Overwrite:$Force
 }
 
 if ($CreateFriendZip) {
-    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
+    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild -AllowDotNetInstall:$InstallDotNetSdk
     New-FriendZip -DllPath $dllPath -Mode $ConfigMode -Destination $FriendZipPath -BepInExZip $bepInExZip
 }

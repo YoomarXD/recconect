@@ -184,6 +184,7 @@ LogJoinState = true
 [Reconnect]
 ExperimentalReconnectEnabled = $experimental
 ConfigureRoomTtlOnCreate = true
+PreservePlayerObjectsDuringReconnect = true
 AllowHostReconnect = false
 PlayerTtlMilliseconds = 30000
 EmptyRoomTtlMilliseconds = 60000
@@ -412,7 +413,7 @@ function Install-BepInEx {
     $alreadyInstalled = (Test-Path -LiteralPath (Join-Path $gamePath.Path 'BepInEx\core\BepInEx.dll')) -and
         (Test-Path -LiteralPath (Join-Path $gamePath.Path 'winhttp.dll'))
 
-    if ($alreadyInstalled -and -not $Overwrite) {
+    if ($alreadyInstalled) {
         Write-Host "BepInEx already appears installed at: $($gamePath.Path)"
         return
     }

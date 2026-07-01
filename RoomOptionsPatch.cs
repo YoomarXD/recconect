@@ -79,7 +79,13 @@ internal static class RoomOptionsPatch
             roomOptions.EmptyRoomTtl = emptyRoomTtl;
         }
 
-        Recconect.Logger.LogInfo($"{source}: PlayerTtl={roomOptions.PlayerTtl}, EmptyRoomTtl={roomOptions.EmptyRoomTtl}");
+        if (Recconect.ModConfig.PreservePlayerObjectsDuringReconnect.Value && roomOptions.CleanupCacheOnLeave)
+        {
+            roomOptions.CleanupCacheOnLeave = false;
+        }
+
+        Recconect.Logger.LogInfo(
+            $"{source}: PlayerTtl={roomOptions.PlayerTtl}, EmptyRoomTtl={roomOptions.EmptyRoomTtl}, CleanupCacheOnLeave={roomOptions.CleanupCacheOnLeave}");
     }
 
     private static void Patch(Harmony harmony, string methodName, Type[] argumentTypes, string prefixName)

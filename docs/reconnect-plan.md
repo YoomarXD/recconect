@@ -22,7 +22,7 @@ Let a client recover from transient network loss without immediately being pushe
 Current implementation:
 
 - `Reconnect.ExperimentalReconnectEnabled=false` preserves vanilla behavior.
-- When enabled by a room creator, `PhotonNetwork.CreateRoom`, `JoinOrCreateRoom`, and `JoinRandomOrCreateRoom` receive configured `PlayerTtl` and `EmptyRoomTtl` values.
+- When enabled by a room creator, `PhotonNetwork.CreateRoom`, `JoinOrCreateRoom`, and `JoinRandomOrCreateRoom` receive configured `PlayerTtl`, `EmptyRoomTtl`, and player-object cache preservation values.
 - `NetworkConnect.OnJoinedRoom()` stores the last successful Photon room and whether the local client was master.
 - Eligible disconnect prefixes suppress vanilla disconnect handling only while an opt-in reconnect coroutine is active.
 - The coroutine tries `PhotonNetwork.ReconnectAndRejoin()`, then falls back to `Reconnect()` plus `RejoinRoom(roomName)` if connected to master but not in room.

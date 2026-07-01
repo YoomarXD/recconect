@@ -104,6 +104,7 @@ The first launch creates a BepInEx config file for:
 - `Diagnostics.LogJoinState`
 - `Reconnect.ExperimentalReconnectEnabled`
 - `Reconnect.ConfigureRoomTtlOnCreate`
+- `Reconnect.PreservePlayerObjectsDuringReconnect`
 - `Reconnect.AllowHostReconnect`
 - `Reconnect.PlayerTtlMilliseconds`
 - `Reconnect.EmptyRoomTtlMilliseconds`
@@ -112,7 +113,7 @@ The first launch creates a BepInEx config file for:
 - `Reconnect.ReconnectAttemptTimeoutSeconds`
 - `Reconnect.EligibleDisconnectCauses`
 
-Reconnect defaults to no behavior change. When enabled, room creators also set nonzero Photon room TTL values so rejoin APIs have a chance to work.
+Reconnect defaults to no behavior change. When enabled, room creators also set nonzero Photon room TTL values and keep player Photon objects cached during the inactive TTL window so rejoin APIs have a chance to restore the same actor cleanly.
 
 ## Packaging
 

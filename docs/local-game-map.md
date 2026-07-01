@@ -100,7 +100,7 @@ When enabled:
 2. `NetworkConnect.OnDisconnected` and `NetworkManager.OnDisconnected` prefixes check the disconnect cause.
 3. Explicit terminal causes such as client/server logic disconnects, authentication failure, region failure, CCU limits, and operation limits are excluded.
 4. Host reconnect is blocked unless `Reconnect.AllowHostReconnect=true`.
-5. If this client creates a room while reconnect is enabled, `PhotonNetwork.CreateRoom`, `JoinOrCreateRoom`, and `JoinRandomOrCreateRoom` get configured `PlayerTtl` and `EmptyRoomTtl` values.
+5. If this client creates a room while reconnect is enabled, `PhotonNetwork.CreateRoom`, `JoinOrCreateRoom`, and `JoinRandomOrCreateRoom` get configured `PlayerTtl`, `EmptyRoomTtl`, and player-object cache preservation values.
 6. The reconnect coroutine tries `PhotonNetwork.ReconnectAndRejoin()`.
 7. If the client reconnects to master but is not in a room, it tries `PhotonNetwork.RejoinRoom(roomName)` once per attempt.
 8. If attempts fail, the coordinator calls `PhotonNetwork.Disconnect()`, `SteamManager.LeaveLobby()`, and `RunManager.LeaveToMainMenu()` as a fallback terminal path.

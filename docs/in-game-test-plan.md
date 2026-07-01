@@ -65,6 +65,7 @@ Run only after diagnostics match expectations.
 1. Enable reconnect on the host/room creator:
    - `Reconnect.ExperimentalReconnectEnabled=true`
    - `Reconnect.ConfigureRoomTtlOnCreate=true`
+   - `Reconnect.PreservePlayerObjectsDuringReconnect=true`
    - `Reconnect.PlayerTtlMilliseconds=30000`
    - `Reconnect.EmptyRoomTtlMilliseconds=60000`
 2. Enable reconnect on the client with the same values.

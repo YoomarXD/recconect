@@ -111,6 +111,7 @@ The first launch creates a BepInEx config file for:
 - `Reconnect.MaxReconnectAttempts`
 - `Reconnect.ReconnectAttemptDelaySeconds`
 - `Reconnect.ReconnectAttemptTimeoutSeconds`
+- `Reconnect.ReconnectStabilizeSeconds`
 - `Reconnect.EligibleDisconnectCauses`
 
 Reconnect defaults to no behavior change. When enabled, room creators also set nonzero Photon room TTL values and keep player Photon objects cached during the inactive TTL window so rejoin APIs have a chance to restore the same actor cleanly.

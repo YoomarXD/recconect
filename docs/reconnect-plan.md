@@ -26,6 +26,7 @@ Current implementation:
 - `NetworkConnect.OnJoinedRoom()` stores the last successful Photon room and whether the local client was master.
 - Eligible disconnect prefixes suppress vanilla disconnect handling only while an opt-in reconnect coroutine is active.
 - The coroutine tries `PhotonNetwork.ReconnectAndRejoin()`, then falls back to `Reconnect()` plus `RejoinRoom(roomName)` if connected to master but not in room.
+- After Photon room rejoin, the coroutine blocks stray `PhotonNetwork.Disconnect()` calls, forces PUN scene sync, and waits briefly for local scene/player objects before declaring the reconnect stabilized.
 - If all attempts fail, it explicitly falls back to `PhotonNetwork.Disconnect()`, `SteamManager.LeaveLobby()`, and `RunManager.LeaveToMainMenu()`.
 - Host reconnect is blocked unless `Reconnect.AllowHostReconnect=true`.
 

@@ -1,7 +1,24 @@
 using HarmonyLib;
+using Photon.Pun;
 using Photon.Realtime;
 
 namespace Recconect;
+
+[HarmonyPatch(typeof(PhotonNetwork), nameof(PhotonNetwork.Disconnect))]
+internal static class PhotonNetworkDisconnectPatch
+{
+    private static bool Prefix()
+    {
+        if (!ReconnectCoordinator.ShouldBlockPhotonDisconnect)
+        {
+            return true;
+        }
+
+        Recconect.Logger.LogWarning("Blocked PhotonNetwork.Disconnect during reconnect stabilization.");
+        NetworkStateSnapshot.Log("PhotonNetwork.Disconnect:blocked");
+        return false;
+    }
+}
 
 [HarmonyPatch(typeof(NetworkConnect), nameof(NetworkConnect.OnConnectedToMaster))]
 internal static class NetworkConnectOnConnectedToMasterPatch

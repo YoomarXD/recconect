@@ -15,6 +15,7 @@ internal sealed class RecconectConfig
     internal ConfigEntry<int> MaxReconnectAttempts { get; }
     internal ConfigEntry<float> ReconnectAttemptDelaySeconds { get; }
     internal ConfigEntry<float> ReconnectAttemptTimeoutSeconds { get; }
+    internal ConfigEntry<float> ReconnectStabilizeSeconds { get; }
     internal ConfigEntry<string> EligibleDisconnectCauses { get; }
 
     internal RecconectConfig(ConfigFile config)
@@ -93,6 +94,14 @@ internal sealed class RecconectConfig
             12f,
             new ConfigDescription(
                 "Maximum time to wait for a single reconnect attempt to reach a joined room.",
+                new AcceptableValueRange<float>(2f, 60f)));
+
+        ReconnectStabilizeSeconds = config.Bind(
+            "Reconnect",
+            "ReconnectStabilizeSeconds",
+            20f,
+            new ConfigDescription(
+                "Maximum time after Photon rejoin to block stray disconnects and wait for scene/player state to stabilize.",
                 new AcceptableValueRange<float>(2f, 60f)));
 
         EligibleDisconnectCauses = config.Bind(

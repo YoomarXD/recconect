@@ -6,6 +6,7 @@ using HarmonyLib;
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Recconect;
 
@@ -25,8 +26,10 @@ internal static class ReconnectCoordinator
 
     private static RoomMemory? lastJoinedRoom;
     private static bool reconnecting;
+    private static bool allowingTerminalDisconnect;
 
     internal static bool IsReconnecting => reconnecting;
+    internal static bool ShouldBlockPhotonDisconnect => reconnecting && !allowingTerminalDisconnect;
 
     internal static void RecordJoinedRoom()
     {
@@ -135,8 +138,12 @@ internal static class ReconnectCoordinator
             {
                 if (PhotonNetwork.InRoom && PhotonNetwork.CurrentRoom?.Name == room.RoomName)
                 {
+                    Recconect.Logger.LogWarning($"Photon rejoin succeeded on attempt {attempt}: room={room.RoomName}; stabilizing game state.");
+                    NetworkStateSnapshot.Log("ReconnectCoordinator:photon-success");
+                    yield return StabilizeAfterPhotonRejoin(room);
+
                     reconnecting = false;
-                    Recconect.Logger.LogWarning($"Experimental reconnect succeeded on attempt {attempt}: room={room.RoomName}");
+                    Recconect.Logger.LogWarning($"Experimental reconnect stabilized on attempt {attempt}: room={room.RoomName}");
                     NetworkStateSnapshot.Log("ReconnectCoordinator:success");
                     yield break;
                 }
@@ -193,15 +200,151 @@ internal static class ReconnectCoordinator
 
     private static void StartVanillaFallbackAfterFailedReconnect()
     {
-        if (SafeAction("NetworkManager.LeavePhotonRoom", InvokeNetworkManagerLeavePhotonRoom))
+        allowingTerminalDisconnect = true;
+        try
         {
-            return;
+            if (SafeAction("NetworkManager.LeavePhotonRoom", InvokeNetworkManagerLeavePhotonRoom))
+            {
+                return;
+            }
+
+            SafeAction("PhotonNetwork.Disconnect", PhotonNetwork.Disconnect);
+            SafeAction("SteamManager.LeaveLobby", InvokeSteamLeaveLobby);
+            SafeAction("GameManager.SetGameMode(0)", InvokeGameManagerSetGameModeMainMenu);
+            SafeAction("RunManager.LeaveToMainMenu", InvokeRunManagerLeaveToMainMenu);
+        }
+        finally
+        {
+            allowingTerminalDisconnect = false;
+        }
+    }
+
+    private static IEnumerator StabilizeAfterPhotonRejoin(RoomMemory room)
+    {
+        float deadline = Time.realtimeSinceStartup + Recconect.ModConfig.ReconnectStabilizeSeconds.Value;
+        float nextSceneSync = 0f;
+        PhotonNetwork.AutomaticallySyncScene = true;
+        PhotonNetwork.IsMessageQueueRunning = false;
+        TryLoadLevelIfSynced();
+        NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-start");
+
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            if (Time.realtimeSinceStartup >= nextSceneSync)
+            {
+                TryLoadLevelIfSynced();
+                nextSceneSync = Time.realtimeSinceStartup + 1f;
+            }
+
+            if (IsGameStateReadyAfterRejoin(out string reason))
+            {
+                Recconect.Logger.LogInfo($"Reconnect stabilization ready: {reason}");
+                break;
+            }
+
+            yield return null;
         }
 
-        SafeAction("PhotonNetwork.Disconnect", PhotonNetwork.Disconnect);
-        SafeAction("SteamManager.LeaveLobby", InvokeSteamLeaveLobby);
-        SafeAction("GameManager.SetGameMode(0)", InvokeGameManagerSetGameModeMainMenu);
-        SafeAction("RunManager.LeaveToMainMenu", InvokeRunManagerLeaveToMainMenu);
+        PhotonNetwork.IsMessageQueueRunning = true;
+        NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-end");
+    }
+
+    private static void TryLoadLevelIfSynced()
+    {
+        try
+        {
+            AccessTools.Method(typeof(PhotonNetwork), "LoadLevelIfSynced")?.Invoke(null, null);
+        }
+        catch (Exception ex)
+        {
+            Recconect.Logger.LogWarning($"PhotonNetwork.LoadLevelIfSynced threw during reconnect stabilization: {ex}");
+        }
+    }
+
+    private static bool IsGameStateReadyAfterRejoin(out string reason)
+    {
+        if (!PhotonNetwork.InRoom)
+        {
+            reason = "not in Photon room";
+            return false;
+        }
+
+        if (IsPhotonLoadingLevel())
+        {
+            reason = "Photon is loading synced scene";
+            return false;
+        }
+
+        if (!IsSyncedSceneLoaded(out reason))
+        {
+            return false;
+        }
+
+        object? networkManager = AccessTools.Field(AccessTools.TypeByName("NetworkManager"), "instance")?.GetValue(null);
+        if (networkManager == null)
+        {
+            reason = "NetworkManager.instance is not available";
+            return false;
+        }
+
+        object? playerAvatar = AccessTools.Field(AccessTools.TypeByName("PlayerAvatar"), "instance")?.GetValue(null);
+        if (playerAvatar == null)
+        {
+            reason = "PlayerAvatar.instance is not available";
+            return false;
+        }
+
+        object? playerController = AccessTools.Field(AccessTools.TypeByName("PlayerController"), "instance")?.GetValue(null);
+        object? playerAvatarScript = playerController == null ? null : AccessTools.Field(playerController.GetType(), "playerAvatarScript")?.GetValue(playerController);
+        if (playerAvatarScript == null)
+        {
+            reason = "PlayerController.playerAvatarScript is not available";
+            return false;
+        }
+
+        reason = $"scene={SceneManager.GetActiveScene().name} local player objects are available";
+        return true;
+    }
+
+    private static bool IsPhotonLoadingLevel()
+    {
+        try
+        {
+            return (bool)(AccessTools.Field(typeof(PhotonNetwork), "loadingLevelAndPausedNetwork")?.GetValue(null) ?? false);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSyncedSceneLoaded(out string reason)
+    {
+        object? scene = PhotonNetwork.CurrentRoom?.CustomProperties["curScn"];
+        Scene activeScene = SceneManager.GetActiveScene();
+
+        if (scene == null)
+        {
+            reason = "room has no synced scene property";
+            return true;
+        }
+
+        if (scene is int sceneIndex)
+        {
+            bool matches = activeScene.buildIndex == sceneIndex;
+            reason = matches ? $"synced scene index {sceneIndex} is loaded" : $"waiting for synced scene index {sceneIndex}, active={activeScene.buildIndex}:{activeScene.name}";
+            return matches;
+        }
+
+        if (scene is string sceneName)
+        {
+            bool matches = activeScene.name == sceneName;
+            reason = matches ? $"synced scene {sceneName} is loaded" : $"waiting for synced scene {sceneName}, active={activeScene.name}";
+            return matches;
+        }
+
+        reason = $"unknown synced scene property type {scene.GetType().FullName}";
+        return true;
     }
 
     private static void InvokeNetworkManagerLeavePhotonRoom()

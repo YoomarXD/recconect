@@ -3,6 +3,7 @@ using System.Reflection;
 using HarmonyLib;
 using Photon.Pun;
 using Photon.Realtime;
+using UnityEngine.SceneManagement;
 
 namespace Recconect;
 
@@ -43,9 +44,52 @@ internal static class NetworkStateSnapshot
             clientState,
             $"connected={Safe(() => PhotonNetwork.IsConnected)} ready={Safe(() => PhotonNetwork.IsConnectedAndReady)} inRoom={Safe(() => PhotonNetwork.InRoom)}",
             $"region={Safe(() => PhotonNetwork.CloudRegion) ?? "<null>"} isMaster={Safe(() => PhotonNetwork.IsMasterClient)} syncScene={Safe(() => PhotonNetwork.AutomaticallySyncScene)} queue={Safe(() => PhotonNetwork.IsMessageQueueRunning)}",
+            SceneState(room),
+            GameState(),
             roomState,
             localPlayerState,
             SteamLobbyState());
+    }
+
+    private static string SceneState(Room? room)
+    {
+        Scene scene = SceneManager.GetActiveScene();
+        object? syncedScene = null;
+        try
+        {
+            syncedScene = room?.CustomProperties["curScn"];
+        }
+        catch
+        {
+            syncedScene = null;
+        }
+
+        return $"scene={scene.buildIndex}:{scene.name} syncedScene={syncedScene ?? "<none>"}";
+    }
+
+    private static string GameState()
+    {
+        object? gameManager = GetStaticField(AccessTools.TypeByName("GameManager"), "instance");
+        object? runManager = GetStaticField(AccessTools.TypeByName("RunManager"), "instance");
+        object? gameDirector = GetStaticField(AccessTools.TypeByName("GameDirector"), "instance");
+        object? networkManager = GetStaticField(AccessTools.TypeByName("NetworkManager"), "instance");
+        object? playerAvatar = GetStaticField(AccessTools.TypeByName("PlayerAvatar"), "instance");
+        object? playerController = GetStaticField(AccessTools.TypeByName("PlayerController"), "instance");
+
+        object? levelCurrent = runManager == null ? null : GetInstanceField(runManager, "levelCurrent");
+        object? playerAvatarScript = playerController == null ? null : GetInstanceField(playerController, "playerAvatarScript");
+
+        return string.Join(
+            " ",
+            $"gameMode={ValueOrNull(gameManager, "gameMode")}",
+            $"level={GetInstanceProperty(levelCurrent, "name") ?? "<null>"}",
+            $"director={ValueOrNull(gameDirector, "currentState")}",
+            $"networkManager={(networkManager == null ? "null" : "ok")}",
+            $"leaveRoom={ValueOrNull(networkManager, "leavePhotonRoom")}",
+            $"avatar={(playerAvatar == null ? "null" : "ok")}",
+            $"avatarDisabled={ValueOrNull(playerAvatar, "isDisabled")}",
+            $"avatarSpawned={ValueOrNull(playerAvatar, "spawned")}",
+            $"controllerAvatar={(playerAvatarScript == null ? "null" : "ok")}");
     }
 
     private static string SteamLobbyState()
@@ -96,5 +140,22 @@ internal static class NetworkStateSnapshot
     private static object? GetInstanceProperty(object? target, string propertyName)
     {
         return target?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(target);
+    }
+
+    private static string ValueOrNull(object? target, string fieldName)
+    {
+        if (target == null)
+        {
+            return "<null>";
+        }
+
+        try
+        {
+            return GetInstanceField(target, fieldName)?.ToString() ?? "<null>";
+        }
+        catch
+        {
+            return "<error>";
+        }
     }
 }

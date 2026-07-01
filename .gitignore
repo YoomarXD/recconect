@@ -38,3 +38,4 @@ UserSettings/
 # OS files
 Thumbs.db
 Desktop.ini
+!BepInEx_win_x64_5.4.23.5.zip

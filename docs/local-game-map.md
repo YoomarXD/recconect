@@ -42,6 +42,9 @@ These are symbol-level findings only. Do not commit decompiled game source.
 | `MenuPageServerList` | Uses Photon lobby listing, then disconnects after gathering public rooms. |
 | `MenuElementServer` | Stores selected room name and triggers lobby join scene flow. |
 | `MenuPageLobby` | Displays lobby players and locks lobby before start. |
+| `LobbyMenuOpen` | Opens `MenuPageIndex.Lobby` after a timer and can reopen the lobby UI if it survives into a run scene. |
+| `PlayerAvatar` | Local avatar `Start()` links `PlayerController.playerAvatarScript`, sets static `PlayerAvatar.instance`, and requests host spawn when level generation is complete. |
+| `LevelGenerator` | Host calls `PlayerSpawn()` for `GameDirector.PlayerList`; player avatars set `spawned=true` through `SpawnRPC`. |
 | `GameManager` | Stores lobby type, random matchmaking mode, max players, and public/private join intent. |
 
 ## Observed Call Flow
@@ -104,6 +107,13 @@ When enabled:
 6. The reconnect coroutine tries `PhotonNetwork.ReconnectAndRejoin()`.
 7. If the client reconnects to master but is not in a room, it tries `PhotonNetwork.RejoinRoom(roomName)` once per attempt.
 8. If attempts fail, the coordinator calls `PhotonNetwork.Disconnect()`, `SteamManager.LeaveLobby()`, and `RunManager.LeaveToMainMenu()` as a fallback terminal path.
+
+## Active Reconnect Findings
+
+- Photon room rejoin can succeed after `ClientTimeout` when room `PlayerTtl` is nonzero and `CleanupCacheOnLeave=false`.
+- The rejoined client can still have the wrong menu stack: snapshots showed `menuPage=Lobby` and a live `LobbyMenuOpen` timer while `level=Level - Museum` and `director=Main`.
+- The local avatar can be present and spawned in runtime state while direct static access is unreliable during reconnect. Prefer resolving the local avatar from runtime `PlayerAvatar.instance`, then `GameDirector.PlayerList` by owned `PhotonView`.
+- Forced local respawn made the ghost state worse by destroying the cached player object path. Keep `Reconnect.ForcePlayerRespawnAfterReconnect=false` unless specifically testing respawn repair.
 
 ## Useful Inspection Commands
 

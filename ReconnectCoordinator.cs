@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using HarmonyLib;
 using Photon.Pun;
 using Photon.Realtime;
@@ -246,6 +247,8 @@ internal static class ReconnectCoordinator
     {
         float deadline = Time.realtimeSinceStartup + Recconect.ModConfig.ReconnectStabilizeSeconds.Value;
         float nextSceneSync = 0f;
+        float nextUiRepair = 0f;
+        bool uiRepairLogged = false;
         bool respawnStarted = false;
         PhotonNetwork.AutomaticallySyncScene = true;
         TryLoadLevelIfSynced();
@@ -264,6 +267,15 @@ internal static class ReconnectCoordinator
                 PhotonNetwork.IsMessageQueueRunning = true;
             }
 
+            if (PhotonNetwork.InRoom &&
+                Time.realtimeSinceStartup >= nextUiRepair &&
+                IsReconnectRuntimeSceneReadyForMenuCleanup())
+            {
+                RepairLocalGameplayUiAfterReconnect(!uiRepairLogged);
+                uiRepairLogged = true;
+                nextUiRepair = Time.realtimeSinceStartup + 0.5f;
+            }
+
             if (!respawnStarted &&
                 Recconect.ModConfig.ForcePlayerRespawnAfterReconnect.Value &&
                 ShouldForceLocalPlayerRespawn(out string respawnReason))
@@ -276,7 +288,7 @@ internal static class ReconnectCoordinator
             if (IsGameStateReadyAfterRejoin(out string reason))
             {
                 Recconect.Logger.LogInfo($"Reconnect stabilization ready: {reason}");
-                RepairLocalGameplayUiAfterReconnect();
+                RepairLocalGameplayUiAfterReconnect(!uiRepairLogged);
                 break;
             }
 
@@ -287,7 +299,7 @@ internal static class ReconnectCoordinator
         NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-end");
     }
 
-    private static void RepairLocalGameplayUiAfterReconnect()
+    private static void RepairLocalGameplayUiAfterReconnect(bool logSnapshot = true)
     {
         SafeAction("LoadingUI.StopLoading", () =>
         {
@@ -313,28 +325,88 @@ internal static class ReconnectCoordinator
             }
 
             MenuManager.instance.PageCloseAll();
+            DestroyRuntimeMenuPages(MenuManager.instance);
             AccessTools.Field(typeof(MenuManager), "currentMenuPage")?.SetValue(MenuManager.instance, null);
-            AccessTools.Method(typeof(MenuManager), "StateSet")?.Invoke(MenuManager.instance, new object[] { MenuManager.MenuState.Closed });
+            AccessTools.Field(typeof(MenuManager), "currentMenuState")?.SetValue(MenuManager.instance, (int)MenuManager.MenuState.Closed);
         });
 
         SafeAction("LobbyMenuOpen.Destroy", () =>
         {
-            if (LobbyMenuOpen.instance != null)
+            Type? lobbyMenuOpenType = AccessTools.TypeByName("LobbyMenuOpen");
+            if (lobbyMenuOpenType == null)
             {
-                UnityEngine.Object.Destroy(LobbyMenuOpen.instance.gameObject);
-                LobbyMenuOpen.instance = null;
+                return;
             }
+
+            foreach (UnityEngine.Object opener in UnityEngine.Object.FindObjectsOfType(lobbyMenuOpenType))
+            {
+                if (opener is Component component)
+                {
+                    UnityEngine.Object.Destroy(component.gameObject);
+                }
+            }
+
+            AccessTools.Field(lobbyMenuOpenType, "instance")?.SetValue(null, null);
         });
 
         SafeAction("PlayerController.InputDisableTimer", () =>
         {
-            if (PlayerController.instance != null)
+            object? playerController = GetRuntimeStaticField("PlayerController", "instance");
+            if (playerController != null)
             {
-                PlayerController.instance.InputDisableTimer = 0f;
+                SetRuntimeInstanceField(playerController, "InputDisableTimer", 0f);
             }
         });
 
-        NetworkStateSnapshot.Log("ReconnectCoordinator:ui-repair");
+        if (logSnapshot)
+        {
+            NetworkStateSnapshot.Log("ReconnectCoordinator:ui-repair");
+        }
+    }
+
+    private static bool IsReconnectRuntimeSceneReadyForMenuCleanup()
+    {
+        if (!IsSyncedSceneLoaded(out _) || !IsLevelGenerated(out _))
+        {
+            return false;
+        }
+
+        try
+        {
+            return !SemiFunc.MenuLevel();
+        }
+        catch
+        {
+            object? runManager = GetRuntimeStaticField("RunManager", "instance");
+            object? levelCurrent = runManager == null ? null : GetRuntimeInstanceField(runManager, "levelCurrent");
+            string? levelName = GetRuntimeInstanceProperty(levelCurrent, "name")?.ToString();
+            return !string.IsNullOrWhiteSpace(levelName) &&
+                !levelName.Contains("Lobby Menu") &&
+                !levelName.Contains("Main Menu") &&
+                !levelName.Contains("Splash");
+        }
+    }
+
+    private static void DestroyRuntimeMenuPages(MenuManager menuManager)
+    {
+        foreach (string listFieldName in new[] { "allPages", "inactivePages", "addedPagesOnTop" })
+        {
+            if (AccessTools.Field(typeof(MenuManager), listFieldName)?.GetValue(menuManager) is not System.Collections.IList pages)
+            {
+                continue;
+            }
+
+            object[] pageSnapshot = pages.Cast<object>().ToArray();
+            foreach (object page in pageSnapshot)
+            {
+                if (page is Component component)
+                {
+                    UnityEngine.Object.Destroy(component.gameObject);
+                }
+            }
+
+            pages.Clear();
+        }
     }
 
     private static void TryLoadLevelIfSynced()
@@ -411,39 +483,40 @@ internal static class ReconnectCoordinator
 
     private static bool IsLocalPlayerAvatarReady(out string reason)
     {
-        PlayerAvatar? playerAvatar = PlayerAvatar.instance;
-        if (playerAvatar == null)
+        object? playerAvatar = GetRuntimeLocalPlayerAvatar();
+        if (IsUnityNull(playerAvatar))
         {
             reason = "PlayerAvatar.instance is not available";
             return false;
         }
 
-        if (playerAvatar.isDisabled)
+        if (GetRuntimeBoolField(playerAvatar, "isDisabled") == true)
         {
             reason = "PlayerAvatar.instance is disabled";
             return false;
         }
 
-        if (!playerAvatar.spawned)
+        if (GetRuntimeBoolField(playerAvatar, "spawned") != true)
         {
             reason = "PlayerAvatar.instance is not spawned";
             return false;
         }
 
-        PlayerController? playerController = PlayerController.instance;
-        if (playerController == null)
+        object? playerController = GetRuntimeStaticField("PlayerController", "instance");
+        if (IsUnityNull(playerController))
         {
             reason = "PlayerController.instance is not available";
             return false;
         }
 
-        if (playerController.playerAvatarScript == null)
+        object? playerAvatarScript = GetRuntimeInstanceField(playerController!, "playerAvatarScript");
+        if (IsUnityNull(playerAvatarScript))
         {
-            reason = "PlayerController.playerAvatarScript is not available";
-            return false;
+            SetRuntimeInstanceField(playerController!, "playerAvatarScript", playerAvatar);
+            playerAvatarScript = playerAvatar;
         }
 
-        if (playerController.playerAvatarScript != playerAvatar)
+        if (!ReferenceEquals(playerAvatarScript, playerAvatar))
         {
             reason = "PlayerController.playerAvatarScript points at a different avatar";
             return false;
@@ -451,6 +524,44 @@ internal static class ReconnectCoordinator
 
         reason = "local player avatar is spawned and active";
         return true;
+    }
+
+    private static object? GetRuntimeLocalPlayerAvatar()
+    {
+        object? playerAvatar = GetRuntimeStaticField("PlayerAvatar", "instance");
+        if (!IsUnityNull(playerAvatar))
+        {
+            return playerAvatar;
+        }
+
+        object? gameDirector = GetRuntimeStaticField("GameDirector", "instance");
+        if (GetRuntimeInstanceField(gameDirector!, "PlayerList") is not System.Collections.IEnumerable players)
+        {
+            return null;
+        }
+
+        foreach (object candidate in players)
+        {
+            if (IsUnityNull(candidate))
+            {
+                continue;
+            }
+
+            object? photonViewObject = GetRuntimeInstanceField(candidate, "photonView");
+            PhotonView? photonView = photonViewObject as PhotonView;
+            if (photonView == null && candidate is Component component)
+            {
+                photonView = component.GetComponent<PhotonView>();
+            }
+
+            if (photonView is { IsMine: true })
+            {
+                GetRuntimeStaticFieldInfo("PlayerAvatar", "instance")?.SetValue(null, candidate);
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static IEnumerator ForceLocalPlayerNetworkRespawn()
@@ -795,6 +906,79 @@ internal static class ReconnectCoordinator
             Recconect.Logger.LogWarning($"{label} fallback threw: {ex}");
             return false;
         }
+    }
+
+    private static FieldInfo? GetRuntimeStaticFieldInfo(string typeName, string fieldName)
+    {
+        return AccessTools.TypeByName(typeName)?.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+    }
+
+    private static object? GetRuntimeStaticField(string typeName, string fieldName)
+    {
+        try
+        {
+            return GetRuntimeStaticFieldInfo(typeName, fieldName)?.GetValue(null);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static object? GetRuntimeInstanceField(object? target, string fieldName)
+    {
+        if (IsUnityNull(target))
+        {
+            return null;
+        }
+
+        try
+        {
+            return target!.GetType().GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(target);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static object? GetRuntimeInstanceProperty(object? target, string propertyName)
+    {
+        if (IsUnityNull(target))
+        {
+            return null;
+        }
+
+        try
+        {
+            return target!.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(target);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool? GetRuntimeBoolField(object? target, string fieldName)
+    {
+        return GetRuntimeInstanceField(target, fieldName) as bool?;
+    }
+
+    private static void SetRuntimeInstanceField(object target, string fieldName, object? value)
+    {
+        try
+        {
+            target.GetType().GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(target, value);
+        }
+        catch (Exception ex)
+        {
+            Recconect.Logger.LogWarning($"Failed to set {target.GetType().Name}.{fieldName}: {ex.Message}");
+        }
+    }
+
+    private static bool IsUnityNull(object? target)
+    {
+        return target == null || target is UnityEngine.Object unityObject && unityObject == null;
     }
 
     private readonly struct RoomMemory

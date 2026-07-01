@@ -18,6 +18,8 @@ param(
 
     [switch] $NoBuild,
     [switch] $CreateFriendZip,
+    [switch] $DisableRecconect,
+    [switch] $EnableRecconect,
     [string] $FriendZipPath = '',
     [switch] $Force
 )
@@ -417,6 +419,38 @@ function Install-Recconect {
     }
 }
 
+function Set-RecconectEnabled {
+    param(
+        [object] $Target,
+        [bool] $Enabled
+    )
+
+    $pluginDir = Join-Path $Target.PluginsPath $PluginFolderName
+    $dll = Join-Path $pluginDir $PluginDllName
+    $disabled = Join-Path $pluginDir "$PluginDllName.disabled"
+
+    if ($Enabled) {
+        if (Test-Path -LiteralPath $disabled) {
+            Rename-Item -LiteralPath $disabled -NewName $PluginDllName -Force
+            Write-Host "Enabled Recconect: $dll"
+        } elseif (Test-Path -LiteralPath $dll) {
+            Write-Host "Recconect is already enabled: $dll"
+        } else {
+            throw "Could not find disabled or enabled Recconect DLL in: $pluginDir"
+        }
+        return
+    }
+
+    if (Test-Path -LiteralPath $dll) {
+        Rename-Item -LiteralPath $dll -NewName "$PluginDllName.disabled" -Force
+        Write-Host "Disabled Recconect: $disabled"
+    } elseif (Test-Path -LiteralPath $disabled) {
+        Write-Host "Recconect is already disabled: $disabled"
+    } else {
+        throw "Could not find Recconect DLL in: $pluginDir"
+    }
+}
+
 function New-FriendZip {
     param(
         [string] $DllPath,
@@ -508,14 +542,14 @@ if ($ListGameInstalls) {
     return
 }
 
-$dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
-
-if ($CreateFriendZip) {
-    New-FriendZip -DllPath $dllPath -Mode $ConfigMode -Destination $FriendZipPath -BepInExZip $bepInExZip
-}
-
 if ($GamePath -or ((-not $BepInExPluginsPath) -and (-not $ProfilePath) -and (-not $ProfileName) -and (-not $CreateFriendZip))) {
     $gameTarget = Resolve-GameTarget -RequestedGamePath $GamePath
+    if ($DisableRecconect -or $EnableRecconect) {
+        Set-RecconectEnabled -Target $gameTarget -Enabled:$EnableRecconect
+        return
+    }
+
+    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
     Install-BepInEx -GameTarget $gameTarget -ZipPath $bepInExZip -Overwrite:$Force
     Install-Recconect -Target $gameTarget -DllPath $dllPath -Mode $ConfigMode -Overwrite:$Force
     return
@@ -532,5 +566,16 @@ if ($BepInExPluginsPath -or $ProfilePath -or $ProfileName) {
         throw "Target profile does not have BepInEx installed: $($target.BepInExPath). Use -GamePath to install into the game folder, or install BepInExPack in the profile first."
     }
 
+    if ($DisableRecconect -or $EnableRecconect) {
+        Set-RecconectEnabled -Target $target -Enabled:$EnableRecconect
+        return
+    }
+
+    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
     Install-Recconect -Target $target -DllPath $dllPath -Mode $ConfigMode -Overwrite:$Force
+}
+
+if ($CreateFriendZip) {
+    $dllPath = Get-BuiltDllPath -RepoRoot $repoRoot -BuildConfiguration $Configuration -SkipBuild:$NoBuild
+    New-FriendZip -DllPath $dllPath -Mode $ConfigMode -Destination $FriendZipPath -BepInExZip $bepInExZip
 }

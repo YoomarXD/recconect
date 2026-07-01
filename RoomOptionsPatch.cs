@@ -7,6 +7,34 @@ namespace Recconect;
 
 internal static class RoomOptionsPatch
 {
+    internal static void Install(Harmony harmony)
+    {
+        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value ||
+            !Recconect.ModConfig.ConfigureRoomTtlOnCreate.Value)
+        {
+            Recconect.Logger.LogInfo("Experimental reconnect disabled; Photon room TTL patches were not installed.");
+            return;
+        }
+
+        Patch(harmony, nameof(PhotonNetwork.CreateRoom), new[] { typeof(string), typeof(RoomOptions), typeof(TypedLobby), typeof(string[]) }, nameof(CreateRoomPrefix));
+        Patch(harmony, nameof(PhotonNetwork.JoinOrCreateRoom), new[] { typeof(string), typeof(RoomOptions), typeof(TypedLobby), typeof(string[]) }, nameof(JoinOrCreateRoomPrefix));
+        Patch(
+            harmony,
+            nameof(PhotonNetwork.JoinRandomOrCreateRoom),
+            new[]
+            {
+                typeof(ExitGames.Client.Photon.Hashtable),
+                typeof(byte),
+                typeof(MatchmakingMode),
+                typeof(TypedLobby),
+                typeof(string),
+                typeof(string),
+                typeof(RoomOptions),
+                typeof(string[])
+            },
+            nameof(JoinRandomOrCreateRoomPrefix));
+    }
+
     internal static void Configure(ref RoomOptions? roomOptions, string source)
     {
         if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value ||
@@ -32,49 +60,33 @@ internal static class RoomOptionsPatch
 
         Recconect.Logger.LogInfo($"{source}: PlayerTtl={roomOptions.PlayerTtl}, EmptyRoomTtl={roomOptions.EmptyRoomTtl}");
     }
-}
 
-[HarmonyPatch(
-    typeof(PhotonNetwork),
-    nameof(PhotonNetwork.CreateRoom),
-    new[] { typeof(string), typeof(RoomOptions), typeof(TypedLobby), typeof(string[]) })]
-internal static class PhotonNetworkCreateRoomPatch
-{
-    private static void Prefix(ref RoomOptions? __1)
+    private static void Patch(Harmony harmony, string methodName, Type[] argumentTypes, string prefixName)
+    {
+        System.Reflection.MethodInfo? original = AccessTools.Method(typeof(PhotonNetwork), methodName, argumentTypes);
+        System.Reflection.MethodInfo? prefix = AccessTools.Method(typeof(RoomOptionsPatch), prefixName);
+
+        if (original == null || prefix == null)
+        {
+            Recconect.Logger.LogWarning($"Could not install room TTL patch for {methodName}.");
+            return;
+        }
+
+        harmony.Patch(original, prefix: new HarmonyMethod(prefix));
+        Recconect.Logger.LogInfo($"Installed room TTL patch for {methodName}.");
+    }
+
+    private static void CreateRoomPrefix(ref RoomOptions? __1)
     {
         RoomOptionsPatch.Configure(ref __1, "PhotonNetwork.CreateRoom");
     }
-}
 
-[HarmonyPatch(
-    typeof(PhotonNetwork),
-    nameof(PhotonNetwork.JoinOrCreateRoom),
-    new[] { typeof(string), typeof(RoomOptions), typeof(TypedLobby), typeof(string[]) })]
-internal static class PhotonNetworkJoinOrCreateRoomPatch
-{
-    private static void Prefix(ref RoomOptions? __1)
+    private static void JoinOrCreateRoomPrefix(ref RoomOptions? __1)
     {
         RoomOptionsPatch.Configure(ref __1, "PhotonNetwork.JoinOrCreateRoom");
     }
-}
 
-[HarmonyPatch(
-    typeof(PhotonNetwork),
-    nameof(PhotonNetwork.JoinRandomOrCreateRoom),
-    new[]
-    {
-        typeof(ExitGames.Client.Photon.Hashtable),
-        typeof(byte),
-        typeof(MatchmakingMode),
-        typeof(TypedLobby),
-        typeof(string),
-        typeof(string),
-        typeof(RoomOptions),
-        typeof(string[])
-    })]
-internal static class PhotonNetworkJoinRandomOrCreateRoomPatch
-{
-    private static void Prefix(ref RoomOptions? __6)
+    private static void JoinRandomOrCreateRoomPrefix(ref RoomOptions? __6)
     {
         RoomOptionsPatch.Configure(ref __6, "PhotonNetwork.JoinRandomOrCreateRoom");
     }

@@ -41,6 +41,7 @@ public class Recconect : BaseUnityPlugin
     {
         Harmony ??= new Harmony(Info.Metadata.GUID);
         Harmony.PatchAll();
+        RoomOptionsPatch.Install(Harmony);
     }
 
     internal void Unpatch()

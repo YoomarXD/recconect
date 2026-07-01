@@ -4,9 +4,37 @@ using Photon.Realtime;
 
 namespace Recconect;
 
-[HarmonyPatch(typeof(PhotonNetwork), nameof(PhotonNetwork.Disconnect))]
 internal static class PhotonNetworkDisconnectPatch
 {
+    private static bool installed;
+
+    internal static void InstallDeferred(Harmony? harmony)
+    {
+        if (installed)
+        {
+            return;
+        }
+
+        if (harmony == null)
+        {
+            Recconect.Logger.LogWarning("Could not install PhotonNetwork.Disconnect guard because Harmony is not initialized.");
+            return;
+        }
+
+        System.Reflection.MethodInfo? original = AccessTools.Method(typeof(PhotonNetwork), nameof(PhotonNetwork.Disconnect));
+        System.Reflection.MethodInfo? prefix = AccessTools.Method(typeof(PhotonNetworkDisconnectPatch), nameof(Prefix));
+
+        if (original == null || prefix == null)
+        {
+            Recconect.Logger.LogWarning("Could not install PhotonNetwork.Disconnect guard.");
+            return;
+        }
+
+        harmony.Patch(original, prefix: new HarmonyMethod(prefix));
+        installed = true;
+        Recconect.Logger.LogInfo("Installed deferred PhotonNetwork.Disconnect guard.");
+    }
+
     private static bool Prefix()
     {
         if (!ReconnectCoordinator.ShouldBlockPhotonDisconnect)
@@ -26,6 +54,7 @@ internal static class NetworkConnectOnConnectedToMasterPatch
     private static void Prefix()
     {
         RoomOptionsPatch.InstallDeferred(Recconect.Instance.Harmony);
+        PhotonNetworkDisconnectPatch.InstallDeferred(Recconect.Instance.Harmony);
     }
 }
 

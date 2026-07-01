@@ -7,15 +7,35 @@ namespace Recconect;
 
 internal static class RoomOptionsPatch
 {
-    internal static void Install(Harmony harmony)
+    private static bool installed;
+    private static bool skippedLogged;
+
+    internal static void InstallDeferred(Harmony? harmony)
     {
-        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value ||
-            !Recconect.ModConfig.ConfigureRoomTtlOnCreate.Value)
+        if (installed)
         {
-            Recconect.Logger.LogInfo("Experimental reconnect disabled; Photon room TTL patches were not installed.");
             return;
         }
 
+        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value)
+        {
+            LogSkippedOnce("Experimental reconnect disabled; Photon room TTL patches were not installed.");
+            return;
+        }
+
+        if (!Recconect.ModConfig.ConfigureRoomTtlOnCreate.Value)
+        {
+            LogSkippedOnce("Room TTL patching disabled by config; Photon room TTL patches were not installed.");
+            return;
+        }
+
+        if (harmony == null)
+        {
+            Recconect.Logger.LogWarning("Could not install room TTL patches because Harmony is not initialized.");
+            return;
+        }
+
+        Recconect.Logger.LogInfo("Installing deferred Photon room TTL patches after connection to Master Server.");
         Patch(harmony, nameof(PhotonNetwork.CreateRoom), new[] { typeof(string), typeof(RoomOptions), typeof(TypedLobby), typeof(string[]) }, nameof(CreateRoomPrefix));
         Patch(harmony, nameof(PhotonNetwork.JoinOrCreateRoom), new[] { typeof(string), typeof(RoomOptions), typeof(TypedLobby), typeof(string[]) }, nameof(JoinOrCreateRoomPrefix));
         Patch(
@@ -33,6 +53,7 @@ internal static class RoomOptionsPatch
                 typeof(string[])
             },
             nameof(JoinRandomOrCreateRoomPrefix));
+        installed = true;
     }
 
     internal static void Configure(ref RoomOptions? roomOptions, string source)
@@ -74,6 +95,17 @@ internal static class RoomOptionsPatch
 
         harmony.Patch(original, prefix: new HarmonyMethod(prefix));
         Recconect.Logger.LogInfo($"Installed room TTL patch for {methodName}.");
+    }
+
+    private static void LogSkippedOnce(string message)
+    {
+        if (skippedLogged)
+        {
+            return;
+        }
+
+        skippedLogged = true;
+        Recconect.Logger.LogInfo(message);
     }
 
     private static void CreateRoomPrefix(ref RoomOptions? __1)

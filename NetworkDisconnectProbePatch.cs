@@ -3,6 +3,15 @@ using Photon.Realtime;
 
 namespace Recconect;
 
+[HarmonyPatch(typeof(NetworkConnect), nameof(NetworkConnect.OnConnectedToMaster))]
+internal static class NetworkConnectOnConnectedToMasterPatch
+{
+    private static void Prefix()
+    {
+        RoomOptionsPatch.InstallDeferred(Recconect.Instance.Harmony);
+    }
+}
+
 [HarmonyPatch(typeof(NetworkConnect), nameof(NetworkConnect.OnDisconnected))]
 internal static class NetworkConnectOnDisconnectedPatch
 {

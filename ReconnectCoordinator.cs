@@ -257,9 +257,12 @@ internal static class ReconnectCoordinator
                 PhotonNetwork.IsMessageQueueRunning = true;
             }
 
-            if (!respawnStarted && Recconect.ModConfig.ForcePlayerRespawnAfterReconnect.Value && IsSyncedSceneLoaded(out _))
+            if (!respawnStarted &&
+                Recconect.ModConfig.ForcePlayerRespawnAfterReconnect.Value &&
+                ShouldForceLocalPlayerRespawn(out string respawnReason))
             {
                 respawnStarted = true;
+                Recconect.Logger.LogWarning($"Local player respawn is required after reconnect: {respawnReason}");
                 yield return ForceLocalPlayerNetworkRespawn();
             }
 
@@ -324,22 +327,71 @@ internal static class ReconnectCoordinator
             return false;
         }
 
-        object? playerAvatar = AccessTools.Field(AccessTools.TypeByName("PlayerAvatar"), "instance")?.GetValue(null);
+        if (!IsLocalPlayerAvatarReady(out reason))
+        {
+            return false;
+        }
+
+        reason = $"scene={SceneManager.GetActiveScene().name} local player objects are available";
+        return true;
+    }
+
+    private static bool ShouldForceLocalPlayerRespawn(out string reason)
+    {
+        if (!IsSyncedSceneLoaded(out reason) || !IsLevelGenerated(out reason) || !IsGameDirectorMain(out reason))
+        {
+            return false;
+        }
+
+        if (IsLocalPlayerAvatarReady(out reason))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsLocalPlayerAvatarReady(out string reason)
+    {
+        PlayerAvatar? playerAvatar = PlayerAvatar.instance;
         if (playerAvatar == null)
         {
             reason = "PlayerAvatar.instance is not available";
             return false;
         }
 
-        object? playerController = AccessTools.Field(AccessTools.TypeByName("PlayerController"), "instance")?.GetValue(null);
-        object? playerAvatarScript = playerController == null ? null : AccessTools.Field(playerController.GetType(), "playerAvatarScript")?.GetValue(playerController);
-        if (playerAvatarScript == null)
+        if (playerAvatar.isDisabled)
+        {
+            reason = "PlayerAvatar.instance is disabled";
+            return false;
+        }
+
+        if (!playerAvatar.spawned)
+        {
+            reason = "PlayerAvatar.instance is not spawned";
+            return false;
+        }
+
+        PlayerController? playerController = PlayerController.instance;
+        if (playerController == null)
+        {
+            reason = "PlayerController.instance is not available";
+            return false;
+        }
+
+        if (playerController.playerAvatarScript == null)
         {
             reason = "PlayerController.playerAvatarScript is not available";
             return false;
         }
 
-        reason = $"scene={SceneManager.GetActiveScene().name} local player objects are available";
+        if (playerController.playerAvatarScript != playerAvatar)
+        {
+            reason = "PlayerController.playerAvatarScript points at a different avatar";
+            return false;
+        }
+
+        reason = "local player avatar is spawned and active";
         return true;
     }
 

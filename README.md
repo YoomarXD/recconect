@@ -105,6 +105,7 @@ The first launch creates a BepInEx config file for:
 - `Reconnect.ExperimentalReconnectEnabled`
 - `Reconnect.ConfigureRoomTtlOnCreate`
 - `Reconnect.PreservePlayerObjectsDuringReconnect`
+- `Reconnect.ForcePlayerRespawnAfterReconnect`
 - `Reconnect.AllowHostReconnect`
 - `Reconnect.PlayerTtlMilliseconds`
 - `Reconnect.EmptyRoomTtlMilliseconds`

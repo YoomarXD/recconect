@@ -223,8 +223,8 @@ internal static class ReconnectCoordinator
     {
         float deadline = Time.realtimeSinceStartup + Recconect.ModConfig.ReconnectStabilizeSeconds.Value;
         float nextSceneSync = 0f;
+        bool respawnStarted = false;
         PhotonNetwork.AutomaticallySyncScene = true;
-        PhotonNetwork.IsMessageQueueRunning = false;
         TryLoadLevelIfSynced();
         NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-start");
 
@@ -234,6 +234,17 @@ internal static class ReconnectCoordinator
             {
                 TryLoadLevelIfSynced();
                 nextSceneSync = Time.realtimeSinceStartup + 1f;
+            }
+
+            if (!IsPhotonLoadingLevel())
+            {
+                PhotonNetwork.IsMessageQueueRunning = true;
+            }
+
+            if (!respawnStarted && Recconect.ModConfig.ForcePlayerRespawnAfterReconnect.Value && IsSyncedSceneLoaded(out _))
+            {
+                respawnStarted = true;
+                yield return ForceLocalPlayerNetworkRespawn();
             }
 
             if (IsGameStateReadyAfterRejoin(out string reason))
@@ -287,6 +298,16 @@ internal static class ReconnectCoordinator
             return false;
         }
 
+        if (!IsLevelGenerated(out reason))
+        {
+            return false;
+        }
+
+        if (!IsGameDirectorMain(out reason))
+        {
+            return false;
+        }
+
         object? playerAvatar = AccessTools.Field(AccessTools.TypeByName("PlayerAvatar"), "instance")?.GetValue(null);
         if (playerAvatar == null)
         {
@@ -304,6 +325,76 @@ internal static class ReconnectCoordinator
 
         reason = $"scene={SceneManager.GetActiveScene().name} local player objects are available";
         return true;
+    }
+
+    private static IEnumerator ForceLocalPlayerNetworkRespawn()
+    {
+        Recconect.Logger.LogWarning("Refreshing local player network objects after Photon rejoin.");
+        NetworkStateSnapshot.Log("ReconnectCoordinator:respawn-start");
+
+        DestroyLocalPlayerAvatar();
+        DestroyLocalPlayerVoice();
+
+        yield return null;
+        yield return null;
+
+        NetworkManager? networkManager = NetworkManager.instance;
+        if (networkManager == null)
+        {
+            Recconect.Logger.LogWarning("Cannot respawn local player because NetworkManager.instance is null.");
+            yield break;
+        }
+
+        PhotonNetwork.IsMessageQueueRunning = true;
+        string? avatarPrefabName = networkManager.playerAvatarPrefab?.name;
+        if (string.IsNullOrWhiteSpace(avatarPrefabName))
+        {
+            Recconect.Logger.LogWarning("Cannot respawn local player because NetworkManager.playerAvatarPrefab is missing.");
+            yield break;
+        }
+
+        PhotonNetwork.Instantiate(avatarPrefabName, Vector3.zero, Quaternion.identity, 0);
+        PhotonNetwork.Instantiate("Voice", Vector3.zero, Quaternion.identity, 0);
+        networkManager.photonView.RPC("PlayerSpawnedRPC", RpcTarget.All);
+
+        yield return null;
+        NetworkStateSnapshot.Log("ReconnectCoordinator:respawn-end");
+    }
+
+    private static void DestroyLocalPlayerAvatar()
+    {
+        PlayerAvatar? avatar = PlayerAvatar.instance;
+        if (avatar == null)
+        {
+            return;
+        }
+
+        PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+        if (photonView != null && !photonView.IsMine)
+        {
+            return;
+        }
+
+        PlayerAvatar.instance = null;
+        UnityEngine.Object.Destroy(avatar.gameObject);
+    }
+
+    private static void DestroyLocalPlayerVoice()
+    {
+        PlayerVoiceChat? voice = PlayerVoiceChat.instance;
+        if (voice == null)
+        {
+            return;
+        }
+
+        PhotonView? photonView = voice.photonView != null ? voice.photonView : voice.GetComponent<PhotonView>();
+        if (photonView != null && !photonView.IsMine)
+        {
+            return;
+        }
+
+        PlayerVoiceChat.instance = null;
+        UnityEngine.Object.Destroy(voice.gameObject);
     }
 
     private static bool IsPhotonLoadingLevel()
@@ -344,6 +435,44 @@ internal static class ReconnectCoordinator
         }
 
         reason = $"unknown synced scene property type {scene.GetType().FullName}";
+        return true;
+    }
+
+    private static bool IsLevelGenerated(out string reason)
+    {
+        LevelGenerator? levelGenerator = LevelGenerator.Instance;
+        if (levelGenerator == null)
+        {
+            reason = "LevelGenerator.Instance is not available";
+            return false;
+        }
+
+        if (!levelGenerator.Generated)
+        {
+            reason = "LevelGenerator has not finished";
+            return false;
+        }
+
+        reason = "level is generated";
+        return true;
+    }
+
+    private static bool IsGameDirectorMain(out string reason)
+    {
+        GameDirector? gameDirector = GameDirector.instance;
+        if (gameDirector == null)
+        {
+            reason = "GameDirector.instance is not available";
+            return false;
+        }
+
+        if (gameDirector.currentState != GameDirector.gameState.Main)
+        {
+            reason = $"GameDirector is {gameDirector.currentState}";
+            return false;
+        }
+
+        reason = "GameDirector is Main";
         return true;
     }
 

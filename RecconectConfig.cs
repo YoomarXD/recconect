@@ -9,6 +9,7 @@ internal sealed class RecconectConfig
     internal ConfigEntry<bool> ExperimentalReconnectEnabled { get; }
     internal ConfigEntry<bool> ConfigureRoomTtlOnCreate { get; }
     internal ConfigEntry<bool> PreservePlayerObjectsDuringReconnect { get; }
+    internal ConfigEntry<bool> ForcePlayerRespawnAfterReconnect { get; }
     internal ConfigEntry<bool> AllowHostReconnect { get; }
     internal ConfigEntry<int> PlayerTtlMilliseconds { get; }
     internal ConfigEntry<int> EmptyRoomTtlMilliseconds { get; }
@@ -49,6 +50,12 @@ internal sealed class RecconectConfig
             "PreservePlayerObjectsDuringReconnect",
             true,
             "When configuring reconnect-capable rooms, keep Photon player objects cached during the inactive TTL window.");
+
+        ForcePlayerRespawnAfterReconnect = config.Bind(
+            "Reconnect",
+            "ForcePlayerRespawnAfterReconnect",
+            true,
+            "After Photon rejoin, recreate local networked player avatar and voice objects to replace stale PhotonViews.");
 
         AllowHostReconnect = config.Bind(
             "Reconnect",

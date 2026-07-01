@@ -66,6 +66,7 @@ Run only after diagnostics match expectations.
    - `Reconnect.ExperimentalReconnectEnabled=true`
    - `Reconnect.ConfigureRoomTtlOnCreate=true`
    - `Reconnect.PreservePlayerObjectsDuringReconnect=true`
+   - `Reconnect.ForcePlayerRespawnAfterReconnect=true`
    - `Reconnect.PlayerTtlMilliseconds=120000`
    - `Reconnect.EmptyRoomTtlMilliseconds=180000`
    - `Reconnect.MaxReconnectAttempts=5`

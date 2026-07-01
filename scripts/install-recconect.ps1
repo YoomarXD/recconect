@@ -185,6 +185,7 @@ LogJoinState = true
 ExperimentalReconnectEnabled = $experimental
 ConfigureRoomTtlOnCreate = true
 PreservePlayerObjectsDuringReconnect = true
+ForcePlayerRespawnAfterReconnect = true
 AllowHostReconnect = false
 PlayerTtlMilliseconds = 120000
 EmptyRoomTtlMilliseconds = 180000

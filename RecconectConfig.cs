@@ -55,8 +55,8 @@ internal sealed class RecconectConfig
         ForcePlayerRespawnAfterReconnect = config.Bind(
             "Reconnect",
             "ForcePlayerRespawnAfterReconnect",
-            true,
-            "After Photon rejoin, recreate local networked player avatar and voice objects to replace stale PhotonViews.");
+            false,
+            "After Photon rejoin, recreate local networked player avatar and voice objects to replace stale PhotonViews. This is unsafe and should stay disabled unless specifically testing respawn repair.");
 
         AllowHostReconnect = config.Bind(
             "Reconnect",

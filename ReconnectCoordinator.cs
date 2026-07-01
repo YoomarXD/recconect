@@ -276,6 +276,7 @@ internal static class ReconnectCoordinator
             if (IsGameStateReadyAfterRejoin(out string reason))
             {
                 Recconect.Logger.LogInfo($"Reconnect stabilization ready: {reason}");
+                RepairLocalGameplayUiAfterReconnect();
                 break;
             }
 
@@ -284,6 +285,56 @@ internal static class ReconnectCoordinator
 
         PhotonNetwork.IsMessageQueueRunning = true;
         NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-end");
+    }
+
+    private static void RepairLocalGameplayUiAfterReconnect()
+    {
+        SafeAction("LoadingUI.StopLoading", () =>
+        {
+            if (LoadingUI.instance != null && LoadingUI.instance.gameObject.activeSelf)
+            {
+                LoadingUI.instance.StopLoading();
+            }
+        });
+
+        SafeAction("HUD.Show", () =>
+        {
+            if (HUD.instance != null)
+            {
+                HUD.instance.Show();
+            }
+        });
+
+        SafeAction("MenuManager.PageCloseAll", () =>
+        {
+            if (MenuManager.instance == null)
+            {
+                return;
+            }
+
+            MenuManager.instance.PageCloseAll();
+            AccessTools.Field(typeof(MenuManager), "currentMenuPage")?.SetValue(MenuManager.instance, null);
+            AccessTools.Method(typeof(MenuManager), "StateSet")?.Invoke(MenuManager.instance, new object[] { MenuManager.MenuState.Closed });
+        });
+
+        SafeAction("LobbyMenuOpen.Destroy", () =>
+        {
+            if (LobbyMenuOpen.instance != null)
+            {
+                UnityEngine.Object.Destroy(LobbyMenuOpen.instance.gameObject);
+                LobbyMenuOpen.instance = null;
+            }
+        });
+
+        SafeAction("PlayerController.InputDisableTimer", () =>
+        {
+            if (PlayerController.instance != null)
+            {
+                PlayerController.instance.InputDisableTimer = 0f;
+            }
+        });
+
+        NetworkStateSnapshot.Log("ReconnectCoordinator:ui-repair");
     }
 
     private static void TryLoadLevelIfSynced()

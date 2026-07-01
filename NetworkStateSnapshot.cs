@@ -75,9 +75,16 @@ internal static class NetworkStateSnapshot
         object? networkManager = GetStaticField(AccessTools.TypeByName("NetworkManager"), "instance");
         object? playerAvatar = GetStaticField(AccessTools.TypeByName("PlayerAvatar"), "instance");
         object? playerController = GetStaticField(AccessTools.TypeByName("PlayerController"), "instance");
+        object? menuManager = GetStaticField(AccessTools.TypeByName("MenuManager"), "instance");
+        object? hud = GetStaticField(AccessTools.TypeByName("HUD"), "instance");
+        object? loadingUi = GetStaticField(AccessTools.TypeByName("LoadingUI"), "instance");
+        object? lobbyMenuOpen = GetStaticField(AccessTools.TypeByName("LobbyMenuOpen"), "instance");
 
         object? levelCurrent = runManager == null ? null : GetInstanceField(runManager, "levelCurrent");
         object? playerAvatarScript = playerController == null ? null : GetInstanceField(playerController, "playerAvatarScript");
+        object? currentMenuPage = menuManager == null ? null : GetInstanceField(menuManager, "currentMenuPage");
+        object? allPages = menuManager == null ? null : GetInstanceField(menuManager, "allPages");
+        object? addedPagesOnTop = menuManager == null ? null : GetInstanceField(menuManager, "addedPagesOnTop");
 
         return string.Join(
             " ",
@@ -89,7 +96,14 @@ internal static class NetworkStateSnapshot
             $"avatar={(playerAvatar == null ? "null" : "ok")}",
             $"avatarDisabled={ValueOrNull(playerAvatar, "isDisabled")}",
             $"avatarSpawned={ValueOrNull(playerAvatar, "spawned")}",
-            $"controllerAvatar={(playerAvatarScript == null ? "null" : "ok")}");
+            $"controllerAvatar={(playerAvatarScript == null ? "null" : "ok")}",
+            $"menuPage={ValueOrNull(currentMenuPage, "menuPageIndex")}",
+            $"menuState={ValueOrNull(menuManager, "currentMenuState")}",
+            $"menuPages={CollectionCount(allPages)}+{CollectionCount(addedPagesOnTop)}",
+            $"hudHidden={ValueOrNull(hud, "hidden")}",
+            $"loadingActive={GameObjectActive(loadingUi)}",
+            $"loadingStuck={ValueOrNull(loadingUi, "stuckActive")}",
+            $"lobbyMenuOpen={ValueOrNull(lobbyMenuOpen, "opened")}/{ValueOrNull(lobbyMenuOpen, "timer")}");
     }
 
     private static string SteamLobbyState()
@@ -164,5 +178,22 @@ internal static class NetworkStateSnapshot
         {
             return "<error>";
         }
+    }
+
+    private static string CollectionCount(object? target)
+    {
+        if (target is System.Collections.ICollection collection)
+        {
+            return collection.Count.ToString();
+        }
+
+        return target == null ? "<null>" : "<unknown>";
+    }
+
+    private static string GameObjectActive(object? target)
+    {
+        object? gameObject = GetInstanceProperty(target, "gameObject");
+        object? activeSelf = GetInstanceProperty(gameObject, "activeSelf");
+        return activeSelf?.ToString() ?? "<null>";
     }
 }

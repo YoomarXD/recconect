@@ -31,6 +31,22 @@ internal static class ReconnectCoordinator
     internal static bool IsReconnecting => reconnecting;
     internal static bool ShouldBlockPhotonDisconnect => reconnecting && !allowingTerminalDisconnect;
 
+    internal static void ScheduleHostRepairForEnteredPlayer(Player player)
+    {
+        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value ||
+            !Recconect.ModConfig.ForcePlayerRespawnAfterReconnect.Value ||
+            !PhotonNetwork.IsMasterClient ||
+            player.IsLocal ||
+            LevelGenerator.Instance == null ||
+            !LevelGenerator.Instance.Generated)
+        {
+            return;
+        }
+
+        Recconect.Logger.LogInfo($"Scheduling host-side spawn repair for entered player actor={player.ActorNumber} nick={player.NickName}.");
+        Recconect.Instance.StartCoroutine(HostRepairEnteredPlayerRoutine(player.ActorNumber, player.NickName));
+    }
+
     internal static void RecordJoinedRoom()
     {
         Room? room = PhotonNetwork.CurrentRoom;
@@ -337,6 +353,8 @@ internal static class ReconnectCoordinator
 
         yield return null;
         yield return null;
+        PhotonNetwork.SendAllOutgoingCommands();
+        yield return null;
 
         NetworkManager? networkManager = NetworkManager.instance;
         if (networkManager == null)
@@ -355,6 +373,7 @@ internal static class ReconnectCoordinator
 
         PhotonNetwork.Instantiate(avatarPrefabName, Vector3.zero, Quaternion.identity, 0);
         PhotonNetwork.Instantiate("Voice", Vector3.zero, Quaternion.identity, 0);
+        PhotonNetwork.SendAllOutgoingCommands();
         networkManager.photonView.RPC("PlayerSpawnedRPC", RpcTarget.All);
 
         yield return null;
@@ -376,7 +395,7 @@ internal static class ReconnectCoordinator
         }
 
         PlayerAvatar.instance = null;
-        UnityEngine.Object.Destroy(avatar.gameObject);
+        DestroyOwnedNetworkObject("stale local player avatar", avatar.gameObject);
     }
 
     private static void DestroyLocalPlayerVoice()
@@ -394,7 +413,123 @@ internal static class ReconnectCoordinator
         }
 
         PlayerVoiceChat.instance = null;
-        UnityEngine.Object.Destroy(voice.gameObject);
+        DestroyOwnedNetworkObject("stale local player voice", voice.gameObject);
+    }
+
+    private static void DestroyOwnedNetworkObject(string label, GameObject gameObject)
+    {
+        try
+        {
+            if (PhotonNetwork.InRoom)
+            {
+                PhotonNetwork.Destroy(gameObject);
+                Recconect.Logger.LogInfo($"Destroyed {label} through PhotonNetwork.Destroy.");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Recconect.Logger.LogWarning($"PhotonNetwork.Destroy failed for {label}: {ex}");
+        }
+
+        UnityEngine.Object.Destroy(gameObject);
+    }
+
+    private static IEnumerator HostRepairEnteredPlayerRoutine(int actorNumber, string nickName)
+    {
+        float deadline = Time.realtimeSinceStartup + 10f;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            PlayerAvatar? avatar = FindPlayerAvatarByActor(actorNumber);
+            if (avatar != null)
+            {
+                if (!avatar.spawned)
+                {
+                    SpawnSinglePlayerAvatar(avatar, actorNumber, nickName);
+                }
+                else
+                {
+                    Recconect.Logger.LogInfo($"Host-side spawn repair skipped for actor={actorNumber}; avatar is already spawned.");
+                }
+
+                yield break;
+            }
+
+            yield return new WaitForSeconds(0.25f);
+        }
+
+        Recconect.Logger.LogWarning($"Host-side spawn repair could not find avatar for actor={actorNumber} nick={nickName}.");
+    }
+
+    private static PlayerAvatar? FindPlayerAvatarByActor(int actorNumber)
+    {
+        if (GameDirector.instance == null)
+        {
+            return null;
+        }
+
+        foreach (PlayerAvatar avatar in GameDirector.instance.PlayerList)
+        {
+            if (avatar?.photonView != null && avatar.photonView.OwnerActorNr == actorNumber)
+            {
+                return avatar;
+            }
+        }
+
+        return null;
+    }
+
+    private static void SpawnSinglePlayerAvatar(PlayerAvatar avatar, int actorNumber, string nickName)
+    {
+        (Vector3 position, Quaternion rotation) = PickSpawnPoint(actorNumber);
+        Recconect.Logger.LogWarning($"Host-side spawning repaired avatar for actor={actorNumber} nick={nickName} at {position}.");
+        avatar.Spawn(position, rotation);
+        EnsurePlayerSupportObjects(avatar);
+        NetworkStateSnapshot.Log("ReconnectCoordinator:host-repair-spawn");
+    }
+
+    private static (Vector3 Position, Quaternion Rotation) PickSpawnPoint(int actorNumber)
+    {
+        List<SpawnPoint> spawnPoints = UnityEngine.Object.FindObjectsOfType<SpawnPoint>().ToList();
+        if (spawnPoints.Count == 0)
+        {
+            Transform? fallback = TruckSafetySpawnPoint.instance?.transform;
+            return fallback != null
+                ? (fallback.position, fallback.rotation)
+                : (Vector3.zero + Vector3.up * 2f, Quaternion.identity);
+        }
+
+        List<SpawnPoint> debugSpawnPoints = spawnPoints.Where(static point => point.debug).ToList();
+        List<SpawnPoint> candidates = debugSpawnPoints.Count > 0 ? debugSpawnPoints : spawnPoints;
+        SpawnPoint selected = candidates[Math.Abs(actorNumber) % candidates.Count];
+        return (selected.transform.position, selected.transform.rotation);
+    }
+
+    private static void EnsurePlayerSupportObjects(PlayerAvatar avatar)
+    {
+        LevelGenerator? levelGenerator = LevelGenerator.Instance;
+        if (levelGenerator == null || SemiFunc.MenuLevel())
+        {
+            return;
+        }
+
+        if (avatar.playerDeathHead == null && levelGenerator.PlayerDeathHeadPrefab != null)
+        {
+            GameObject deathHead = PhotonNetwork.Instantiate(levelGenerator.PlayerDeathHeadPrefab.name, AssetManager.instance.physDisabledPosition, Quaternion.identity, 0);
+            PlayerDeathHead component = deathHead.GetComponent<PlayerDeathHead>();
+            component.playerAvatar = avatar;
+            avatar.playerDeathHead = component;
+        }
+
+        if (avatar.tumble == null && levelGenerator.PlayerTumblePrefab != null)
+        {
+            GameObject tumble = PhotonNetwork.Instantiate(levelGenerator.PlayerTumblePrefab.name, AssetManager.instance.physDisabledPosition, Quaternion.identity, 0);
+            PlayerTumble component = tumble.GetComponent<PlayerTumble>();
+            component.playerAvatar = avatar;
+            avatar.tumble = component;
+        }
+
+        PhotonNetwork.SendAllOutgoingCommands();
     }
 
     private static bool IsPhotonLoadingLevel()

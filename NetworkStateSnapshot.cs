@@ -139,7 +139,14 @@ internal static class NetworkStateSnapshot
 
     private static object? GetInstanceProperty(object? target, string propertyName)
     {
-        return target?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(target);
+        try
+        {
+            return target?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(target);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string ValueOrNull(object? target, string fieldName)

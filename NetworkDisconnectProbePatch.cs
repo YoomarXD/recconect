@@ -121,3 +121,12 @@ internal static class NetworkManagerOnDisconnectedPatch
         ReconnectCoordinator.ClearAfterVanillaDisconnect();
     }
 }
+
+[HarmonyPatch(typeof(NetworkManager), nameof(NetworkManager.OnPlayerEnteredRoom))]
+internal static class NetworkManagerOnPlayerEnteredRoomPatch
+{
+    private static void Postfix(Player newPlayer)
+    {
+        ReconnectCoordinator.ScheduleHostRepairForEnteredPlayer(newPlayer);
+    }
+}

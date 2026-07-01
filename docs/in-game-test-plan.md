@@ -71,6 +71,7 @@ Run only after diagnostics match expectations.
    - `Reconnect.EmptyRoomTtlMilliseconds=180000`
    - `Reconnect.MaxReconnectAttempts=5`
    - `Reconnect.ReconnectStabilizeSeconds=20`
+   - `Reconnect.ReconnectRespawnGraceSeconds=5`
 2. Enable reconnect on the client with the same values.
 3. Host a fresh lobby after changing config so room TTL patches apply during room creation.
 4. Join, start a run, then interrupt only the client network briefly.

@@ -193,6 +193,7 @@ MaxReconnectAttempts = 5
 ReconnectAttemptDelaySeconds = 2
 ReconnectAttemptTimeoutSeconds = 12
 ReconnectStabilizeSeconds = 20
+ReconnectRespawnGraceSeconds = 5
 EligibleDisconnectCauses = ClientTimeout,ServerTimeout,Exception,ExceptionOnConnect
 "@
 }

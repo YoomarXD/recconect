@@ -158,6 +158,13 @@ internal static class ReconnectCoordinator
                     NetworkStateSnapshot.Log("ReconnectCoordinator:photon-success");
                     yield return StabilizeAfterPhotonRejoin(room);
 
+                    if (!IsGameStateReadyAfterRejoin(out string stabilizeFailureReason))
+                    {
+                        Recconect.Logger.LogWarning($"Reconnect attempt {attempt} rejoined Photon but game state did not stabilize: {stabilizeFailureReason}");
+                        NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-failed");
+                        break;
+                    }
+
                     reconnecting = false;
                     Recconect.Logger.LogWarning($"Experimental reconnect stabilized on attempt {attempt}: room={room.RoomName}");
                     NetworkStateSnapshot.Log("ReconnectCoordinator:success");
@@ -397,6 +404,26 @@ internal static class ReconnectCoordinator
 
     private static IEnumerator ForceLocalPlayerNetworkRespawn()
     {
+        float graceDeadline = Time.realtimeSinceStartup + Recconect.ModConfig.ReconnectRespawnGraceSeconds.Value;
+        while (Time.realtimeSinceStartup < graceDeadline)
+        {
+            if (IsLocalPlayerAvatarReady(out string readyReason))
+            {
+                Recconect.Logger.LogInfo($"Skipping forced player respawn; original avatar recovered during grace window: {readyReason}");
+                NetworkStateSnapshot.Log("ReconnectCoordinator:respawn-skipped-ready");
+                yield break;
+            }
+
+            yield return null;
+        }
+
+        if (IsLocalPlayerAvatarReady(out string finalReadyReason))
+        {
+            Recconect.Logger.LogInfo($"Skipping forced player respawn; original avatar is ready: {finalReadyReason}");
+            NetworkStateSnapshot.Log("ReconnectCoordinator:respawn-skipped-ready");
+            yield break;
+        }
+
         Recconect.Logger.LogWarning("Refreshing local player network objects after Photon rejoin.");
         NetworkStateSnapshot.Log("ReconnectCoordinator:respawn-start");
 

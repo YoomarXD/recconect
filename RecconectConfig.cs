@@ -17,6 +17,7 @@ internal sealed class RecconectConfig
     internal ConfigEntry<float> ReconnectAttemptDelaySeconds { get; }
     internal ConfigEntry<float> ReconnectAttemptTimeoutSeconds { get; }
     internal ConfigEntry<float> ReconnectStabilizeSeconds { get; }
+    internal ConfigEntry<float> ReconnectRespawnGraceSeconds { get; }
     internal ConfigEntry<string> EligibleDisconnectCauses { get; }
 
     internal RecconectConfig(ConfigFile config)
@@ -110,6 +111,14 @@ internal sealed class RecconectConfig
             new ConfigDescription(
                 "Maximum time after Photon rejoin to block stray disconnects and wait for scene/player state to stabilize.",
                 new AcceptableValueRange<float>(2f, 60f)));
+
+        ReconnectRespawnGraceSeconds = config.Bind(
+            "Reconnect",
+            "ReconnectRespawnGraceSeconds",
+            5f,
+            new ConfigDescription(
+                "Time to wait for the original local player avatar to recover before forcing a new network respawn.",
+                new AcceptableValueRange<float>(0f, 20f)));
 
         EligibleDisconnectCauses = config.Bind(
             "Reconnect",

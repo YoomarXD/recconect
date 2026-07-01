@@ -58,7 +58,7 @@ internal sealed class RecconectConfig
         PlayerTtlMilliseconds = config.Bind(
             "Reconnect",
             "PlayerTtlMilliseconds",
-            30000,
+            120000,
             new ConfigDescription(
                 "Photon PlayerTtl for rooms created while experimental reconnect is enabled. Rejoin usually requires this to be greater than zero.",
                 new AcceptableValueRange<int>(0, 300000)));
@@ -66,7 +66,7 @@ internal sealed class RecconectConfig
         EmptyRoomTtlMilliseconds = config.Bind(
             "Reconnect",
             "EmptyRoomTtlMilliseconds",
-            60000,
+            180000,
             new ConfigDescription(
                 "Photon EmptyRoomTtl for rooms created while experimental reconnect is enabled.",
                 new AcceptableValueRange<int>(0, 300000)));
@@ -74,7 +74,7 @@ internal sealed class RecconectConfig
         MaxReconnectAttempts = config.Bind(
             "Reconnect",
             "MaxReconnectAttempts",
-            3,
+            5,
             new ConfigDescription(
                 "Maximum reconnect attempts after an eligible disconnect.",
                 new AcceptableValueRange<int>(0, 10)));

@@ -42,6 +42,24 @@ internal static class NetworkConnectOnJoinedRoomPatch
     }
 }
 
+[HarmonyPatch(typeof(NetworkConnect), nameof(NetworkConnect.OnJoinRoomFailed))]
+internal static class NetworkConnectOnJoinRoomFailedPatch
+{
+    private static bool Prefix(short returnCode, string _cause)
+    {
+        Recconect.Logger.LogWarning($"NetworkConnect.OnJoinRoomFailed: returnCode={returnCode}, cause={_cause}");
+        NetworkStateSnapshot.Log("NetworkConnect.OnJoinRoomFailed:prefix");
+
+        if (!ReconnectCoordinator.IsReconnecting)
+        {
+            return true;
+        }
+
+        Recconect.Logger.LogInfo("Suppressing vanilla join-room failure handling during reconnect flow.");
+        return false;
+    }
+}
+
 [HarmonyPatch(typeof(NetworkManager), nameof(NetworkManager.OnDisconnected))]
 internal static class NetworkManagerOnDisconnectedPatch
 {

@@ -193,15 +193,47 @@ internal static class ReconnectCoordinator
 
     private static void StartVanillaFallbackAfterFailedReconnect()
     {
+        if (SafeAction("NetworkManager.LeavePhotonRoom", InvokeNetworkManagerLeavePhotonRoom))
+        {
+            return;
+        }
+
         SafeAction("PhotonNetwork.Disconnect", PhotonNetwork.Disconnect);
         SafeAction("SteamManager.LeaveLobby", InvokeSteamLeaveLobby);
+        SafeAction("GameManager.SetGameMode(0)", InvokeGameManagerSetGameModeMainMenu);
         SafeAction("RunManager.LeaveToMainMenu", InvokeRunManagerLeaveToMainMenu);
+    }
+
+    private static void InvokeNetworkManagerLeavePhotonRoom()
+    {
+        object? networkManager = AccessTools.Field(AccessTools.TypeByName("NetworkManager"), "instance")?.GetValue(null);
+        System.Reflection.MethodInfo? leavePhotonRoom = AccessTools.Method(networkManager?.GetType(), "LeavePhotonRoom");
+
+        if (networkManager == null || leavePhotonRoom == null)
+        {
+            throw new InvalidOperationException("NetworkManager.instance or LeavePhotonRoom was not available.");
+        }
+
+        leavePhotonRoom.Invoke(networkManager, null);
     }
 
     private static void InvokeSteamLeaveLobby()
     {
         object? steamManager = AccessTools.Field(AccessTools.TypeByName("SteamManager"), "instance")?.GetValue(null);
         AccessTools.Method(steamManager?.GetType(), "LeaveLobby")?.Invoke(steamManager, null);
+    }
+
+    private static void InvokeGameManagerSetGameModeMainMenu()
+    {
+        object? gameManager = AccessTools.Field(AccessTools.TypeByName("GameManager"), "instance")?.GetValue(null);
+        System.Reflection.MethodInfo? setGameMode = AccessTools.Method(gameManager?.GetType(), "SetGameMode", new[] { typeof(int) });
+
+        if (gameManager == null || setGameMode == null)
+        {
+            throw new InvalidOperationException("GameManager.instance or SetGameMode(int) was not available.");
+        }
+
+        setGameMode.Invoke(gameManager, new object[] { 0 });
     }
 
     private static void InvokeRunManagerLeaveToMainMenu()
@@ -214,15 +246,17 @@ internal static class ReconnectCoordinator
         }
     }
 
-    private static void SafeAction(string label, Action action)
+    private static bool SafeAction(string label, Action action)
     {
         try
         {
             action();
+            return true;
         }
         catch (Exception ex)
         {
             Recconect.Logger.LogWarning($"{label} fallback threw: {ex}");
+            return false;
         }
     }
 

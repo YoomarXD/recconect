@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using ExitGames.Client.Photon;
 using HarmonyLib;
 using Photon.Pun;
@@ -70,8 +71,313 @@ internal static class ReconnectCoordinator
         PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
         bool isMine = photonView != null && photonView.IsMine;
         bool replacementActive = IsActorReplacementActive(photonView?.OwnerActorNr ?? -1);
+        Transform avatarTransform = avatar.transform;
+        GameObject? parentObject = avatarTransform.parent == null ? null : avatarTransform.parent.gameObject;
         Recconect.Logger.LogInfo(
-            $"PlayerAvatar.{stage}: view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} isMine={isMine} replacementActive={replacementActive} isLocal={avatar.isLocal} spawned={avatar.spawned} disabled={avatar.isDisabled} unityNull={(avatar == null)} playerList={PlayerListSummary()}");
+            $"PlayerAvatar.{stage}: view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} isMine={isMine} replacementActive={replacementActive} isLocal={avatar.isLocal} spawned={avatar.spawned} disabled={avatar.isDisabled} unityNull={(avatar == null)} transform={FormatTransform(avatarTransform)} parent={FormatGameObject(parentObject)} staticInstance={FormatStaticPlayerAvatar()} controller={FormatPlayerController()} playerList={PlayerListSummary()}");
+
+        if (ShouldLogAvatarDestroyStack(stage, photonView, replacementActive))
+        {
+            Recconect.Logger.LogWarning($"PlayerAvatar.{stage}: destroy-stack\n{CompactStackTrace()}");
+            LogDeepDiagnosticState($"PlayerAvatar.{stage}");
+        }
+    }
+
+    internal static void LogPlayerAvatarSpawn(string stage, PlayerAvatar avatar, Vector3 position, Quaternion rotation, PhotonMessageInfo? info = null)
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value || avatar == null)
+        {
+            return;
+        }
+
+        PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+        string sender = info.HasValue
+            ? $"{info.Value.Sender?.ActorNumber ?? -1}:{info.Value.Sender?.NickName ?? "<null>"}"
+            : "<none>";
+        Recconect.Logger.LogWarning(
+            $"PlayerAvatar.{stage}: view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} isMine={photonView?.IsMine ?? false} sender={sender} pos={FormatVector(position)} rot={FormatQuaternion(rotation)} before spawned={avatar.spawned} transform={FormatTransform(avatar.transform)} staticInstance={FormatStaticPlayerAvatar()} controller={FormatPlayerController()}");
+        LogDeepDiagnosticState($"PlayerAvatar.{stage}");
+    }
+
+    internal static void LogPlayerAvatarSpawnResult(string stage, PlayerAvatar avatar)
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value || avatar == null)
+        {
+            return;
+        }
+
+        PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+        Recconect.Logger.LogWarning(
+            $"PlayerAvatar.{stage}: view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} isMine={photonView?.IsMine ?? false} after spawned={avatar.spawned} transform={FormatTransform(avatar.transform)} staticInstance={FormatStaticPlayerAvatar()} controller={FormatPlayerController()}");
+    }
+
+    internal static void LogNetworkSpawnMethod(string label, PhotonMessageInfo? info = null)
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value)
+        {
+            return;
+        }
+
+        string sender = info.HasValue
+            ? $"{info.Value.Sender?.ActorNumber ?? -1}:{info.Value.Sender?.NickName ?? "<null>"}"
+            : "<none>";
+        Recconect.Logger.LogWarning($"{label}: sender={sender}");
+        LogDeepDiagnosticState(label);
+        StartDiagnosticBurst(label, 3f, 0.5f);
+    }
+
+    internal static void StartDiagnosticBurst(string label, float seconds, float interval)
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value || Recconect.Instance == null)
+        {
+            return;
+        }
+
+        Recconect.Instance.StartCoroutine(DiagnosticBurstRoutine(label, seconds, interval));
+    }
+
+    internal static void LogDeepDiagnosticState(string label)
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value)
+        {
+            return;
+        }
+
+        try
+        {
+            Recconect.Logger.LogInfo(BuildDeepDiagnosticState(label));
+        }
+        catch (Exception ex)
+        {
+            Recconect.Logger.LogWarning($"Deep diagnostic snapshot failed for {label}: {ex}");
+        }
+    }
+
+    private static IEnumerator DiagnosticBurstRoutine(string label, float seconds, float interval)
+    {
+        int tick = 0;
+        float deadline = Time.realtimeSinceStartup + seconds;
+        while (Time.realtimeSinceStartup <= deadline)
+        {
+            LogDeepDiagnosticState($"{label}:burst:{tick++}");
+            yield return new WaitForSeconds(interval);
+        }
+    }
+
+    private static bool ShouldLogAvatarDestroyStack(string stage, PhotonView? photonView, bool replacementActive)
+    {
+        if (!stage.StartsWith("OnDestroy", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (photonView == null || photonView.ViewID <= 0)
+        {
+            return false;
+        }
+
+        int localActor = PhotonNetwork.LocalPlayer?.ActorNumber ?? -1;
+        return replacementActive || reconnecting || photonView.OwnerActorNr == localActor || photonView.IsMine;
+    }
+
+    private static string CompactStackTrace()
+    {
+        string[] lines = Environment.StackTrace
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Skip(2)
+            .Take(28)
+            .Select(static line => line.Trim())
+            .ToArray();
+
+        return string.Join("\n", lines);
+    }
+
+    private static string BuildDeepDiagnosticState(string label)
+    {
+        StringBuilder builder = new();
+        builder.AppendLine($"[Recconect deep] label={label} realtime={Time.realtimeSinceStartup:F2}");
+        builder.AppendLine($"photon connected={PhotonNetwork.IsConnected} ready={PhotonNetwork.IsConnectedAndReady} inRoom={PhotonNetwork.InRoom} state={PhotonNetwork.NetworkingClient?.State} server={PhotonNetwork.NetworkingClient?.Server} queue={PhotonNetwork.IsMessageQueueRunning} localActor={PhotonNetwork.LocalPlayer?.ActorNumber ?? -1} localUser={PhotonNetwork.LocalPlayer?.UserId ?? "<null>"} isMaster={PhotonNetwork.IsMasterClient}");
+
+        Room? room = PhotonNetwork.CurrentRoom;
+        builder.AppendLine(room == null
+            ? "room=<null>"
+            : $"room name={room.Name} players={room.PlayerCount}/{room.MaxPlayers} open={room.IsOpen} visible={room.IsVisible} custom={FormatHashtable(room.CustomProperties)}");
+
+        Scene activeScene = SceneManager.GetActiveScene();
+        builder.AppendLine($"scene index={activeScene.buildIndex} name={activeScene.name} loaded={activeScene.isLoaded} path={activeScene.path}");
+        builder.AppendLine($"game mode={GameManager.instance?.gameMode.ToString() ?? "<null>"} director={GameDirector.instance?.currentState.ToString() ?? "<null>"} networkLoadingDone={NetworkManager.instance?.LoadingDone.ToString() ?? "<null>"} level={RunManager.instance?.levelCurrent?.name ?? "<null>"} levelGenerated={LevelGenerator.Instance?.Generated.ToString() ?? "<null>"} levelState={LevelGenerator.Instance?.State.ToString() ?? "<null>"} levelPlayerSpawned={LevelGenerator.Instance?.playerSpawned.ToString() ?? "<null>"} allPlayersReady={LevelGenerator.Instance?.AllPlayersReady.ToString() ?? "<null>"} leavePhotonRoom={NetworkManager.instance?.leavePhotonRoom.ToString() ?? "<null>"}");
+        builder.AppendLine($"staticAvatar={FormatStaticPlayerAvatar()}");
+        builder.AppendLine($"controller={FormatPlayerController()}");
+        builder.AppendLine($"camera={FormatCamera()}");
+        builder.AppendLine($"menu={FormatMenuState()}");
+        builder.AppendLine($"players={FormatAllPlayerAvatars()}");
+        builder.AppendLine($"voices={FormatAllVoiceChats()}");
+        builder.AppendLine($"photonViews={FormatRelevantPhotonViews()}");
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string FormatHashtable(ExitGames.Client.Photon.Hashtable? hashtable)
+    {
+        if (hashtable == null || hashtable.Count == 0)
+        {
+            return "<empty>";
+        }
+
+        return string.Join(",", hashtable.Cast<System.Collections.DictionaryEntry>().Select(static entry => $"{entry.Key}={entry.Value}"));
+    }
+
+    private static string FormatStaticPlayerAvatar()
+    {
+        PlayerAvatar? avatar = PlayerAvatar.instance;
+        return FormatAvatar("static", avatar);
+    }
+
+    private static string FormatAllPlayerAvatars()
+    {
+        try
+        {
+            return string.Join(" ; ", UnityEngine.Object.FindObjectsOfType<PlayerAvatar>().Select((avatar, index) => FormatAvatar(index.ToString(), avatar)));
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
+    }
+
+    private static string FormatAllVoiceChats()
+    {
+        try
+        {
+            return string.Join(" ; ", UnityEngine.Object.FindObjectsOfType<PlayerVoiceChat>().Select(static (voice, index) =>
+            {
+                if (voice == null)
+                {
+                    return $"{index}:<unity-null>";
+                }
+
+                PhotonView? photonView = voice.photonView != null ? voice.photonView : voice.GetComponent<PhotonView>();
+                return $"{index}:name={voice.name} view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} isMine={photonView?.IsMine ?? false} active={voice.gameObject.activeSelf} transform={FormatTransform(voice.transform)} playerAvatar={FormatAvatar("voiceAvatar", voice.playerAvatar)}";
+            }));
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
+    }
+
+    private static string FormatRelevantPhotonViews()
+    {
+        try
+        {
+            int localActor = PhotonNetwork.LocalPlayer?.ActorNumber ?? -1;
+            HashSet<int> roomActors = PhotonNetwork.CurrentRoom?.Players?.Keys.ToHashSet() ?? new HashSet<int>();
+            return string.Join(" ; ", UnityEngine.Object.FindObjectsOfType<PhotonView>()
+                .Where(view => view != null && (view.OwnerActorNr == localActor || roomActors.Contains(view.OwnerActorNr) || view.ViewID < 3000))
+                .OrderBy(static view => view.ViewID)
+                .Take(80)
+                .Select(static view => $"{view.ViewID}:owner={view.OwnerActorNr} ctrl={view.ControllerActorNr} mine={view.IsMine} name={view.name} active={view.gameObject.activeSelf} pos={FormatTransform(view.transform)}"));
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
+    }
+
+    private static string FormatAvatar(string label, PlayerAvatar? avatar)
+    {
+        if (avatar == null)
+        {
+            return $"{label}:<null-or-destroyed>";
+        }
+
+        PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+        return $"{label}:name={avatar.name} view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} ctrl={photonView?.ControllerActorNr ?? -1} isMine={photonView?.IsMine ?? false} isLocal={avatar.isLocal} spawned={avatar.spawned} disabled={avatar.isDisabled} active={avatar.gameObject.activeSelf} transform={FormatTransform(avatar.transform)} parent={FormatGameObject(avatar.transform.parent?.gameObject)}";
+    }
+
+    private static string FormatPlayerController()
+    {
+        try
+        {
+            PlayerController? controller = PlayerController.instance;
+            if (controller == null)
+            {
+                return "<null-or-destroyed>";
+            }
+
+            object? rbObject = GetRuntimeInstanceField(controller, "rb");
+            string rbState = rbObject is Rigidbody rb
+                ? $"rbPos={FormatVector(rb.position)} rbVel={FormatVector(rb.velocity)}"
+                : "rb=<null>";
+            return $"active={controller.gameObject.activeSelf} transform={FormatTransform(controller.transform)} {rbState} inputDisable={GetRuntimeInstanceField(controller, "InputDisableTimer") ?? "<null>"} avatarGo={FormatGameObject(controller.playerAvatar)} avatarScript={FormatAvatar("controllerAvatar", controller.playerAvatarScript)}";
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
+    }
+
+    private static string FormatCamera()
+    {
+        try
+        {
+            Camera? camera = Camera.main;
+            if (camera == null)
+            {
+                return "<null>";
+            }
+
+            return $"name={camera.name} active={camera.gameObject.activeSelf} enabled={camera.enabled} transform={FormatTransform(camera.transform)}";
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
+    }
+
+    private static string FormatMenuState()
+    {
+        try
+        {
+            object? menuPage = MenuManager.instance == null ? null : GetRuntimeInstanceField(MenuManager.instance, "currentMenuPage");
+            object? lobbyMenuOpen = GetRuntimeStaticField("LobbyMenuOpen", "instance");
+            return $"menuState={MenuManager.instance?.currentMenuState.ToString() ?? "<null>"} currentPage={GetRuntimeInstanceField(menuPage, "menuPageIndex") ?? "<null>"} hudHidden={HUD.instance?.hidden.ToString() ?? "<null>"} loadingActive={LoadingUI.instance?.gameObject.activeSelf.ToString() ?? "<null>"} loadingStuck={GetRuntimeInstanceField(LoadingUI.instance, "stuckActive") ?? "<null>"} lobbyOpen={GetRuntimeInstanceField(lobbyMenuOpen, "opened") ?? "<null>"}/{GetRuntimeInstanceField(lobbyMenuOpen, "timer") ?? "<null>"}";
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
+    }
+
+    private static string FormatGameObject(GameObject? gameObject)
+    {
+        if (gameObject == null)
+        {
+            return "<null-or-destroyed>";
+        }
+
+        PhotonView? photonView = gameObject.GetComponent<PhotonView>();
+        return $"{gameObject.name} active={gameObject.activeSelf} view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} transform={FormatTransform(gameObject.transform)}";
+    }
+
+    private static string FormatTransform(Transform? transform)
+    {
+        if (transform == null)
+        {
+            return "<null>";
+        }
+
+        return $"pos={FormatVector(transform.position)} rot={FormatQuaternion(transform.rotation)}";
+    }
+
+    private static string FormatVector(Vector3 value)
+    {
+        return $"({value.x:F2},{value.y:F2},{value.z:F2})";
+    }
+
+    private static string FormatQuaternion(Quaternion value)
+    {
+        Vector3 euler = value.eulerAngles;
+        return $"({euler.x:F1},{euler.y:F1},{euler.z:F1})";
     }
 
     internal static void InstallEventHandler()
@@ -223,6 +529,7 @@ internal static class ReconnectCoordinator
                     rejoinedPhotonRoom = true;
                     Recconect.Logger.LogWarning($"Photon rejoin succeeded on attempt {attempt}: room={room.RoomName}; stabilizing game state.");
                     NetworkStateSnapshot.Log("ReconnectCoordinator:photon-success");
+                    StartDiagnosticBurst("photon-success", 4f, 0.5f);
                     yield return StabilizeAfterPhotonRejoin(room);
 
                     if (!IsGameStateReadyAfterRejoin(out string stabilizeFailureReason))
@@ -327,6 +634,7 @@ internal static class ReconnectCoordinator
         PhotonNetwork.AutomaticallySyncScene = true;
         TryLoadLevelIfSynced();
         NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-start");
+        LogDeepDiagnosticState("stabilize-start");
 
         while (Time.realtimeSinceStartup < deadline)
         {
@@ -378,6 +686,7 @@ internal static class ReconnectCoordinator
 
         PhotonNetwork.IsMessageQueueRunning = true;
         NetworkStateSnapshot.Log("ReconnectCoordinator:stabilize-end");
+        LogDeepDiagnosticState("stabilize-end");
     }
 
     private static void RepairLocalGameplayUiAfterReconnect(bool logSnapshot = true)
@@ -584,6 +893,8 @@ internal static class ReconnectCoordinator
     private static IEnumerator ReplaceLocalPlayerObjectsAfterReconnect(RoomMemory room)
     {
         NetworkStateSnapshot.Log("ReconnectCoordinator:replace-start");
+        LogDeepDiagnosticState("replace-start");
+        StartDiagnosticBurst("replace-start", 4f, 0.5f);
 
         int actorNumber = PhotonNetwork.LocalPlayer?.ActorNumber ?? room.ActorNumber;
         if (actorNumber <= 0)
@@ -614,6 +925,7 @@ internal static class ReconnectCoordinator
 
         PhotonNetwork.IsMessageQueueRunning = true;
         Recconect.Logger.LogWarning($"Instantiating replacement local avatar and voice for actor={actorNumber}.");
+        LogDeepDiagnosticState("replace-before-instantiate");
         PhotonNetwork.Instantiate(avatarPrefabName, Vector3.zero, Quaternion.identity, 0);
 
         if (!HasUsableOwnedVoiceChat(actorNumber))
@@ -623,6 +935,8 @@ internal static class ReconnectCoordinator
 
         PhotonNetwork.SendAllOutgoingCommands();
         networkManager.photonView.RPC("PlayerSpawnedRPC", RpcTarget.All);
+        LogDeepDiagnosticState("replace-after-player-spawned-rpc");
+        StartDiagnosticBurst("replace-after-instantiate", 8f, 0.25f);
 
         float deadline = Time.realtimeSinceStartup + 8f;
         while (Time.realtimeSinceStartup < deadline)
@@ -640,6 +954,7 @@ internal static class ReconnectCoordinator
 
         Recconect.Logger.LogWarning("Replacement local player objects did not become ready before timeout.");
         NetworkStateSnapshot.Log("ReconnectCoordinator:replace-timeout");
+        LogDeepDiagnosticState("replace-timeout");
     }
 
     private static void RequestHostRemoveStaleActorObjects(int actorNumber)

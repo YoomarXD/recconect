@@ -1,6 +1,7 @@
 using HarmonyLib;
 using Photon.Pun;
 using Photon.Realtime;
+using UnityEngine;
 
 namespace Recconect;
 
@@ -167,5 +168,65 @@ internal static class PlayerAvatarOnDestroyPatch
     private static void Prefix(PlayerAvatar __instance)
     {
         ReconnectCoordinator.LogPlayerAvatarLifecycle("OnDestroy:prefix", __instance);
+    }
+}
+
+[HarmonyPatch(typeof(PlayerAvatar), nameof(PlayerAvatar.Spawn))]
+internal static class PlayerAvatarSpawnPatch
+{
+    private static void Prefix(PlayerAvatar __instance, Vector3 position, Quaternion rotation)
+    {
+        ReconnectCoordinator.LogPlayerAvatarSpawn("Spawn:prefix", __instance, position, rotation);
+    }
+
+    private static void Postfix(PlayerAvatar __instance)
+    {
+        ReconnectCoordinator.LogPlayerAvatarSpawnResult("Spawn:postfix", __instance);
+    }
+}
+
+[HarmonyPatch(typeof(PlayerAvatar), "SpawnRPC")]
+internal static class PlayerAvatarSpawnRpcPatch
+{
+    private static void Prefix(PlayerAvatar __instance, Vector3 position, Quaternion rotation, PhotonMessageInfo _info)
+    {
+        ReconnectCoordinator.LogPlayerAvatarSpawn("SpawnRPC:prefix", __instance, position, rotation, _info);
+    }
+
+    private static void Postfix(PlayerAvatar __instance)
+    {
+        ReconnectCoordinator.LogPlayerAvatarSpawnResult("SpawnRPC:postfix", __instance);
+    }
+}
+
+[HarmonyPatch(typeof(NetworkManager), nameof(NetworkManager.PlayerSpawnedRPC))]
+internal static class NetworkManagerPlayerSpawnedRpcPatch
+{
+    private static void Prefix(PhotonMessageInfo _info)
+    {
+        ReconnectCoordinator.LogNetworkSpawnMethod("NetworkManager.PlayerSpawnedRPC:prefix", _info);
+    }
+}
+
+[HarmonyPatch(typeof(LevelGenerator), nameof(LevelGenerator.PlayerSpawn))]
+internal static class LevelGeneratorPlayerSpawnPatch
+{
+    private static void Prefix()
+    {
+        ReconnectCoordinator.LogNetworkSpawnMethod("LevelGenerator.PlayerSpawn:prefix");
+    }
+
+    private static void Postfix()
+    {
+        ReconnectCoordinator.LogNetworkSpawnMethod("LevelGenerator.PlayerSpawn:postfix");
+    }
+}
+
+[HarmonyPatch(typeof(LevelGenerator), "PlayerSpawnedRPC")]
+internal static class LevelGeneratorPlayerSpawnedRpcPatch
+{
+    private static void Prefix(PhotonMessageInfo _info)
+    {
+        ReconnectCoordinator.LogNetworkSpawnMethod("LevelGenerator.PlayerSpawnedRPC:prefix", _info);
     }
 }

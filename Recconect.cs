@@ -19,7 +19,6 @@ public class Recconect : BaseUnityPlugin
     {
         Instance = this;
         ModConfig = new RecconectConfig(Config);
-        ReconnectCoordinator.InstallEventHandler();
 
         // Prevent the plugin from being deleted
         this.gameObject.transform.parent = null;

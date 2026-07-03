@@ -55,6 +55,7 @@ internal static class NetworkConnectOnConnectedToMasterPatch
     {
         RoomOptionsPatch.InstallDeferred(Recconect.Instance.Harmony);
         PhotonNetworkDisconnectPatch.InstallDeferred(Recconect.Instance.Harmony);
+        ReconnectCoordinator.InstallEventHandler();
     }
 }
 

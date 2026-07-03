@@ -94,9 +94,11 @@ internal static class NetworkStateSnapshot
             $"networkManager={(networkManager == null ? "null" : "ok")}",
             $"leaveRoom={ValueOrNull(networkManager, "leavePhotonRoom")}",
             $"avatar={(playerAvatar == null ? "null" : "ok")}",
+            $"avatarUnityNull={UnityNull(playerAvatar)}",
             $"avatarDisabled={ValueOrNull(playerAvatar, "isDisabled")}",
             $"avatarSpawned={ValueOrNull(playerAvatar, "spawned")}",
             $"controllerAvatar={(playerAvatarScript == null ? "null" : "ok")}",
+            $"controllerAvatarUnityNull={UnityNull(playerAvatarScript)}",
             $"menuPage={ValueOrNull(currentMenuPage, "menuPageIndex")}",
             $"menuState={ValueOrNull(menuManager, "currentMenuState")}",
             $"menuPages={CollectionCount(allPages)}+{CollectionCount(addedPagesOnTop)}",
@@ -195,5 +197,10 @@ internal static class NetworkStateSnapshot
         object? gameObject = GetInstanceProperty(target, "gameObject");
         object? activeSelf = GetInstanceProperty(gameObject, "activeSelf");
         return activeSelf?.ToString() ?? "<null>";
+    }
+
+    private static string UnityNull(object? target)
+    {
+        return (target is UnityEngine.Object unityObject && unityObject == null).ToString();
     }
 }

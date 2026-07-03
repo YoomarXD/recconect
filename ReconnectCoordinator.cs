@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using ExitGames.Client.Photon;
 using HarmonyLib;
 using Photon.Pun;
 using Photon.Realtime;
@@ -13,6 +14,8 @@ namespace Recconect;
 
 internal static class ReconnectCoordinator
 {
+    private const byte ReplaceActorObjectsEventCode = 171;
+
     private static readonly HashSet<DisconnectCause> NeverReconnectCauses = new()
     {
         DisconnectCause.DisconnectByClientLogic,
@@ -28,9 +31,32 @@ internal static class ReconnectCoordinator
     private static RoomMemory? lastJoinedRoom;
     private static bool reconnecting;
     private static bool allowingTerminalDisconnect;
+    private static bool eventHandlerInstalled;
 
     internal static bool IsReconnecting => reconnecting;
     internal static bool ShouldBlockPhotonDisconnect => reconnecting && !allowingTerminalDisconnect;
+
+    internal static void InstallEventHandler()
+    {
+        if (eventHandlerInstalled)
+        {
+            return;
+        }
+
+        PhotonNetwork.NetworkingClient.EventReceived += OnPhotonEventReceived;
+        eventHandlerInstalled = true;
+    }
+
+    internal static void UninstallEventHandler()
+    {
+        if (!eventHandlerInstalled)
+        {
+            return;
+        }
+
+        PhotonNetwork.NetworkingClient.EventReceived -= OnPhotonEventReceived;
+        eventHandlerInstalled = false;
+    }
 
     internal static void ScheduleHostRepairForEnteredPlayer(Player player)
     {
@@ -249,6 +275,7 @@ internal static class ReconnectCoordinator
         float nextSceneSync = 0f;
         float nextUiRepair = 0f;
         bool uiRepairLogged = false;
+        bool replacementStarted = false;
         bool respawnStarted = false;
         PhotonNetwork.AutomaticallySyncScene = true;
         TryLoadLevelIfSynced();
@@ -274,6 +301,13 @@ internal static class ReconnectCoordinator
                 RepairLocalGameplayUiAfterReconnect(!uiRepairLogged);
                 uiRepairLogged = true;
                 nextUiRepair = Time.realtimeSinceStartup + 0.5f;
+            }
+
+            if (!replacementStarted && ShouldReplaceLocalPlayerObjectsAfterReconnect(out string replacementReason))
+            {
+                replacementStarted = true;
+                Recconect.Logger.LogWarning($"Local player replacement is required after reconnect: {replacementReason}");
+                yield return ReplaceLocalPlayerObjectsAfterReconnect(room);
             }
 
             if (!respawnStarted &&
@@ -399,9 +433,21 @@ internal static class ReconnectCoordinator
             object[] pageSnapshot = pages.Cast<object>().ToArray();
             foreach (object page in pageSnapshot)
             {
-                if (page is Component component)
+                if (IsUnityNull(page))
                 {
-                    UnityEngine.Object.Destroy(component.gameObject);
+                    continue;
+                }
+
+                try
+                {
+                    if (page is Component component && !IsUnityNull(component))
+                    {
+                        UnityEngine.Object.Destroy(component.gameObject);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Recconect.Logger.LogInfo($"Skipped stale menu page during reconnect cleanup: {ex.Message}");
                 }
             }
 
@@ -464,6 +510,266 @@ internal static class ReconnectCoordinator
 
         reason = $"scene={SceneManager.GetActiveScene().name} local player objects are available";
         return true;
+    }
+
+    private static bool ShouldReplaceLocalPlayerObjectsAfterReconnect(out string reason)
+    {
+        if (!PhotonNetwork.InRoom)
+        {
+            reason = "not in Photon room";
+            return false;
+        }
+
+        if (!IsSyncedSceneLoaded(out reason) || !IsLevelGenerated(out reason) || !IsGameDirectorMain(out reason))
+        {
+            return false;
+        }
+
+        if (IsLocalPlayerAvatarReady(out reason))
+        {
+            return false;
+        }
+
+        reason = $"runtime local avatar is not usable: {reason}";
+        return true;
+    }
+
+    private static IEnumerator ReplaceLocalPlayerObjectsAfterReconnect(RoomMemory room)
+    {
+        NetworkStateSnapshot.Log("ReconnectCoordinator:replace-start");
+
+        int actorNumber = PhotonNetwork.LocalPlayer?.ActorNumber ?? room.ActorNumber;
+        if (actorNumber <= 0)
+        {
+            Recconect.Logger.LogWarning("Cannot replace local player objects because the local actor number is unavailable.");
+            yield break;
+        }
+
+        RequestHostRemoveStaleActorObjects(actorNumber);
+        yield return new WaitForSeconds(0.75f);
+
+        CleanupLocalDestroyedPlayerReferences();
+        ClearStaleLocalSingletons();
+
+        NetworkManager? networkManager = NetworkManager.instance;
+        if (networkManager == null)
+        {
+            Recconect.Logger.LogWarning("Cannot replace local player objects because NetworkManager.instance is null.");
+            yield break;
+        }
+
+        string? avatarPrefabName = networkManager.playerAvatarPrefab?.name;
+        if (string.IsNullOrWhiteSpace(avatarPrefabName))
+        {
+            Recconect.Logger.LogWarning("Cannot replace local player objects because NetworkManager.playerAvatarPrefab is missing.");
+            yield break;
+        }
+
+        PhotonNetwork.IsMessageQueueRunning = true;
+        Recconect.Logger.LogWarning($"Instantiating replacement local avatar and voice for actor={actorNumber}.");
+        PhotonNetwork.Instantiate(avatarPrefabName, Vector3.zero, Quaternion.identity, 0);
+
+        if (!HasUsableOwnedVoiceChat(actorNumber))
+        {
+            PhotonNetwork.Instantiate("Voice", Vector3.zero, Quaternion.identity, 0);
+        }
+
+        PhotonNetwork.SendAllOutgoingCommands();
+        networkManager.photonView.RPC("PlayerSpawnedRPC", RpcTarget.All);
+
+        float deadline = Time.realtimeSinceStartup + 8f;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            CleanupLocalDestroyedPlayerReferences();
+            if (IsLocalPlayerAvatarReady(out string readyReason))
+            {
+                Recconect.Logger.LogWarning($"Replacement local player objects are ready: {readyReason}");
+                NetworkStateSnapshot.Log("ReconnectCoordinator:replace-ready");
+                yield break;
+            }
+
+            yield return null;
+        }
+
+        Recconect.Logger.LogWarning("Replacement local player objects did not become ready before timeout.");
+        NetworkStateSnapshot.Log("ReconnectCoordinator:replace-timeout");
+    }
+
+    private static void RequestHostRemoveStaleActorObjects(int actorNumber)
+    {
+        try
+        {
+            RaiseEventOptions options = new()
+            {
+                Receivers = ReceiverGroup.MasterClient
+            };
+
+            PhotonNetwork.RaiseEvent(ReplaceActorObjectsEventCode, actorNumber, options, SendOptions.SendReliable);
+            Recconect.Logger.LogWarning($"Requested host-side stale player object removal for actor={actorNumber}.");
+        }
+        catch (Exception ex)
+        {
+            Recconect.Logger.LogWarning($"Failed to request host-side stale player object removal: {ex}");
+        }
+    }
+
+    private static void OnPhotonEventReceived(EventData photonEvent)
+    {
+        if (photonEvent.Code != ReplaceActorObjectsEventCode)
+        {
+            return;
+        }
+
+        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value || !PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        int actorNumber = photonEvent.CustomData switch
+        {
+            int value => value,
+            short value => value,
+            byte value => value,
+            _ => -1
+        };
+
+        if (actorNumber <= 0)
+        {
+            Recconect.Logger.LogWarning($"Ignoring stale player replacement request with invalid actor payload: {photonEvent.CustomData}");
+            return;
+        }
+
+        Recconect.Logger.LogWarning($"Host received stale player replacement request for actor={actorNumber}.");
+        Recconect.Instance.StartCoroutine(HostRemoveAndRepairActorObjects(actorNumber));
+    }
+
+    private static IEnumerator HostRemoveAndRepairActorObjects(int actorNumber)
+    {
+        RemoveHostActorObjects(actorNumber);
+        NetworkStateSnapshot.Log("ReconnectCoordinator:host-remove-stale");
+
+        float deadline = Time.realtimeSinceStartup + 8f;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            PlayerAvatar? avatar = FindPlayerAvatarByActor(actorNumber);
+            if (avatar != null)
+            {
+                if (!avatar.spawned)
+                {
+                    SpawnSinglePlayerAvatar(avatar, actorNumber, avatar.photonView?.Owner?.NickName ?? "<unknown>");
+                }
+                else
+                {
+                    EnsurePlayerSupportObjects(avatar);
+                    Recconect.Logger.LogWarning($"Host accepted replacement avatar for actor={actorNumber}; avatar is spawned.");
+                    NetworkStateSnapshot.Log("ReconnectCoordinator:host-accepted-replacement");
+                }
+
+                yield break;
+            }
+
+            yield return new WaitForSeconds(0.25f);
+        }
+
+        Recconect.Logger.LogWarning($"Host did not see replacement avatar for actor={actorNumber} before timeout.");
+    }
+
+    private static void RemoveHostActorObjects(int actorNumber)
+    {
+        foreach (PlayerAvatar avatar in UnityEngine.Object.FindObjectsOfType<PlayerAvatar>().ToArray())
+        {
+            if (avatar == null || avatar.photonView == null || avatar.photonView.OwnerActorNr != actorNumber)
+            {
+                continue;
+            }
+
+            Recconect.Logger.LogWarning($"Host removing stale avatar for actor={actorNumber}, view={avatar.photonView.ViewID}.");
+            DestroyNetworkObjectOrLocal("stale host avatar", avatar.gameObject);
+        }
+
+        foreach (PlayerVoiceChat voice in UnityEngine.Object.FindObjectsOfType<PlayerVoiceChat>().ToArray())
+        {
+            if (voice == null || voice.photonView == null || voice.photonView.OwnerActorNr != actorNumber)
+            {
+                continue;
+            }
+
+            Recconect.Logger.LogWarning($"Host removing stale voice for actor={actorNumber}, view={voice.photonView.ViewID}.");
+            DestroyNetworkObjectOrLocal("stale host voice", voice.gameObject);
+        }
+
+        CleanupLocalDestroyedPlayerReferences();
+    }
+
+    private static void DestroyNetworkObjectOrLocal(string label, GameObject gameObject)
+    {
+        try
+        {
+            if (PhotonNetwork.InRoom)
+            {
+                PhotonNetwork.Destroy(gameObject);
+                Recconect.Logger.LogInfo($"Destroyed {label} through PhotonNetwork.Destroy.");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Recconect.Logger.LogWarning($"PhotonNetwork.Destroy failed for {label}: {ex.Message}");
+        }
+
+        UnityEngine.Object.Destroy(gameObject);
+    }
+
+    private static void CleanupLocalDestroyedPlayerReferences()
+    {
+        try
+        {
+            GameDirector.instance?.PlayerList?.RemoveAll(static avatar => avatar == null);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            RunManager.instance?.voiceChats?.RemoveAll(static voice => voice == null);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void ClearStaleLocalSingletons()
+    {
+        if (PlayerAvatar.instance == null)
+        {
+            PlayerAvatar.instance = null;
+        }
+
+        if (PlayerVoiceChat.instance == null)
+        {
+            PlayerVoiceChat.instance = null;
+        }
+    }
+
+    private static bool HasUsableOwnedVoiceChat(int actorNumber)
+    {
+        if (PlayerVoiceChat.instance != null &&
+            PlayerVoiceChat.instance.photonView != null &&
+            PlayerVoiceChat.instance.photonView.OwnerActorNr == actorNumber)
+        {
+            return true;
+        }
+
+        foreach (PlayerVoiceChat voice in RunManager.instance?.voiceChats ?? new List<PlayerVoiceChat>())
+        {
+            if (voice != null && voice.photonView != null && voice.photonView.OwnerActorNr == actorNumber)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool ShouldForceLocalPlayerRespawn(out string reason)

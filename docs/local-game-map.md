@@ -114,6 +114,9 @@ When enabled:
 - The rejoined client can still have the wrong menu stack: snapshots showed `menuPage=Lobby` and a live `LobbyMenuOpen` timer while `level=Level - Museum` and `director=Main`.
 - The local avatar can be present and spawned in runtime state while direct static access is unreliable during reconnect. Prefer resolving the local avatar from runtime `PlayerAvatar.instance`, then `GameDirector.PlayerList` by owned `PhotonView`.
 - Forced local respawn made the ghost state worse by destroying the cached player object path. Keep `Reconnect.ForcePlayerRespawnAfterReconnect=false` unless specifically testing respawn repair.
+- `NetworkManager.Start()` is the normal scene-start path that instantiates `playerAvatarPrefab`, instantiates `Voice`, and sends `NetworkManager.PlayerSpawnedRPC`; Photon rejoin does not rerun this method.
+- `PlayerAvatar.Awake()` destroys duplicate avatars with the same Photon owner already in `GameDirector.PlayerList`, so client-only replacement is rejected if the host still has the stale old actor avatar.
+- A viable reconnect repair must be host-coordinated: host removes stale avatar/voice objects for the returning actor, then the returning client instantiates the normal avatar and voice prefabs so `PlayerAvatar.Start()` and host `LevelGenerator.PlayerSpawn()` can rebuild the gameplay links.
 
 ## Useful Inspection Commands
 

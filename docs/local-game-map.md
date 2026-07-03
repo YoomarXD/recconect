@@ -118,6 +118,7 @@ When enabled:
 - `PlayerAvatar.Awake()` destroys duplicate avatars with the same Photon owner already in `GameDirector.PlayerList`, so client-only replacement is rejected if the host still has the stale old actor avatar.
 - A viable reconnect repair must be host-coordinated: host removes stale avatar/voice objects for the returning actor, then the returning client instantiates the normal avatar and voice prefabs so `PlayerAvatar.Start()` and host `LevelGenerator.PlayerSpawn()` can rebuild the gameplay links.
 - Do not subscribe custom Photon event handlers from plugin `Awake()`. Defer Photon event subscriptions until `NetworkConnect.OnConnectedToMaster`, matching the room TTL and disconnect guard patches, or the game can stall at the region-selection screen.
+- Avoid `PhotonNetwork.Destroy` for stale returning-player cleanup. The replacement avatar reached `Start()` and then was destroyed; use local-only stale object cleanup on each client, wait for a host cleanup acknowledgement, then instantiate the replacement.
 
 ## Useful Inspection Commands
 

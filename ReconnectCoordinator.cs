@@ -14,7 +14,8 @@ namespace Recconect;
 
 internal static class ReconnectCoordinator
 {
-    private const byte ReplaceActorObjectsEventCode = 171;
+    private const byte ReplaceActorObjectsRequestEventCode = 171;
+    private const byte ReplaceActorObjectsReadyEventCode = 172;
 
     private static readonly HashSet<DisconnectCause> NeverReconnectCauses = new()
     {
@@ -33,6 +34,7 @@ internal static class ReconnectCoordinator
     private static bool allowingTerminalDisconnect;
     private static bool eventHandlerInstalled;
     private static readonly Dictionary<int, float> actorReplacementDeadlines = new();
+    private static readonly HashSet<int> hostReplacementReadyActors = new();
 
     internal static bool IsReconnecting => reconnecting;
     internal static bool ShouldBlockPhotonDisconnect => reconnecting && !allowingTerminalDisconnect;
@@ -191,6 +193,7 @@ internal static class ReconnectCoordinator
     private static IEnumerator ReconnectRoutine(DisconnectCause cause, string source, RoomMemory room)
     {
         Recconect.Logger.LogWarning($"Experimental reconnect started from {source}: cause={cause}, {room}");
+        bool rejoinedPhotonRoom = false;
 
         for (int attempt = 1; attempt <= Recconect.ModConfig.MaxReconnectAttempts.Value; attempt++)
         {
@@ -217,6 +220,7 @@ internal static class ReconnectCoordinator
             {
                 if (PhotonNetwork.InRoom && PhotonNetwork.CurrentRoom?.Name == room.RoomName)
                 {
+                    rejoinedPhotonRoom = true;
                     Recconect.Logger.LogWarning($"Photon rejoin succeeded on attempt {attempt}: room={room.RoomName}; stabilizing game state.");
                     NetworkStateSnapshot.Log("ReconnectCoordinator:photon-success");
                     yield return StabilizeAfterPhotonRejoin(room);
@@ -248,7 +252,14 @@ internal static class ReconnectCoordinator
         }
 
         reconnecting = false;
-        Recconect.Logger.LogWarning("Experimental reconnect failed; future disconnect callbacks will use vanilla behavior.");
+        if (rejoinedPhotonRoom)
+        {
+            Recconect.Logger.LogWarning("Experimental reconnect rejoined Photon but game state did not stabilize; leaving client in-room for diagnostics instead of forcing vanilla disconnect.");
+            NetworkStateSnapshot.Log("ReconnectCoordinator:failed-in-room", cause);
+            yield break;
+        }
+
+        Recconect.Logger.LogWarning("Experimental reconnect failed before Photon room rejoin; future disconnect callbacks will use vanilla behavior.");
         NetworkStateSnapshot.Log("ReconnectCoordinator:failed", cause);
         StartVanillaFallbackAfterFailedReconnect();
     }
@@ -582,7 +593,7 @@ internal static class ReconnectCoordinator
         }
 
         RequestHostRemoveStaleActorObjects(actorNumber);
-        yield return new WaitForSeconds(0.75f);
+        yield return WaitForHostReplacementReady(actorNumber);
 
         CleanupLocalDestroyedPlayerReferences();
         ClearStaleLocalSingletons();
@@ -636,14 +647,15 @@ internal static class ReconnectCoordinator
         try
         {
             MarkActorReplacement(actorNumber);
-            RemoveDuplicateActorAvatarsBeforeAwake(actorNumber, exceptViewId: -1, destroyLocalObjects: false);
+            hostReplacementReadyActors.Remove(actorNumber);
+            RemoveDuplicateActorAvatarsBeforeAwake(actorNumber, exceptViewId: -1, destroyLocalObjects: true);
 
             RaiseEventOptions options = new()
             {
                 Receivers = ReceiverGroup.All
             };
 
-            PhotonNetwork.RaiseEvent(ReplaceActorObjectsEventCode, actorNumber, options, SendOptions.SendReliable);
+            PhotonNetwork.RaiseEvent(ReplaceActorObjectsRequestEventCode, actorNumber, options, SendOptions.SendReliable);
             Recconect.Logger.LogWarning($"Requested host-side stale player object removal for actor={actorNumber}.");
         }
         catch (Exception ex)
@@ -652,9 +664,27 @@ internal static class ReconnectCoordinator
         }
     }
 
+    private static IEnumerator WaitForHostReplacementReady(int actorNumber)
+    {
+        float deadline = Time.realtimeSinceStartup + 5f;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            if (hostReplacementReadyActors.Contains(actorNumber))
+            {
+                Recconect.Logger.LogWarning($"Host confirmed stale player object cleanup for actor={actorNumber}; instantiating replacement.");
+                yield break;
+            }
+
+            yield return null;
+        }
+
+        Recconect.Logger.LogWarning($"Timed out waiting for host stale player cleanup acknowledgement for actor={actorNumber}; trying replacement anyway.");
+    }
+
     private static void OnPhotonEventReceived(EventData photonEvent)
     {
-        if (photonEvent.Code != ReplaceActorObjectsEventCode)
+        if (photonEvent.Code != ReplaceActorObjectsRequestEventCode &&
+            photonEvent.Code != ReplaceActorObjectsReadyEventCode)
         {
             return;
         }
@@ -675,6 +705,14 @@ internal static class ReconnectCoordinator
         if (actorNumber <= 0)
         {
             Recconect.Logger.LogWarning($"Ignoring stale player replacement request with invalid actor payload: {photonEvent.CustomData}");
+            return;
+        }
+
+        if (photonEvent.Code == ReplaceActorObjectsReadyEventCode)
+        {
+            MarkActorReplacement(actorNumber);
+            hostReplacementReadyActors.Add(actorNumber);
+            Recconect.Logger.LogWarning($"Received host stale player cleanup acknowledgement for actor={actorNumber}.");
             return;
         }
 
@@ -795,6 +833,7 @@ internal static class ReconnectCoordinator
     {
         RemoveHostActorObjects(actorNumber);
         NetworkStateSnapshot.Log("ReconnectCoordinator:host-remove-stale");
+        SendHostReplacementReady(actorNumber);
 
         float deadline = Time.realtimeSinceStartup + 8f;
         while (Time.realtimeSinceStartup < deadline)
@@ -822,6 +861,24 @@ internal static class ReconnectCoordinator
         Recconect.Logger.LogWarning($"Host did not see replacement avatar for actor={actorNumber} before timeout.");
     }
 
+    private static void SendHostReplacementReady(int actorNumber)
+    {
+        try
+        {
+            RaiseEventOptions options = new()
+            {
+                Receivers = ReceiverGroup.All
+            };
+
+            PhotonNetwork.RaiseEvent(ReplaceActorObjectsReadyEventCode, actorNumber, options, SendOptions.SendReliable);
+            Recconect.Logger.LogWarning($"Host sent stale player cleanup acknowledgement for actor={actorNumber}.");
+        }
+        catch (Exception ex)
+        {
+            Recconect.Logger.LogWarning($"Failed to send host stale player cleanup acknowledgement for actor={actorNumber}: {ex}");
+        }
+    }
+
     private static void RemoveHostActorObjects(int actorNumber)
     {
         foreach (PlayerAvatar avatar in UnityEngine.Object.FindObjectsOfType<PlayerAvatar>().ToArray())
@@ -832,7 +889,7 @@ internal static class ReconnectCoordinator
             }
 
             Recconect.Logger.LogWarning($"Host removing stale avatar for actor={actorNumber}, view={avatar.photonView.ViewID}.");
-            DestroyNetworkObjectOrLocal("stale host avatar", avatar.gameObject);
+            DestroyLocalObjectOnly("stale host avatar", avatar.gameObject);
         }
 
         foreach (PlayerVoiceChat voice in UnityEngine.Object.FindObjectsOfType<PlayerVoiceChat>().ToArray())
@@ -843,29 +900,23 @@ internal static class ReconnectCoordinator
             }
 
             Recconect.Logger.LogWarning($"Host removing stale voice for actor={actorNumber}, view={voice.photonView.ViewID}.");
-            DestroyNetworkObjectOrLocal("stale host voice", voice.gameObject);
+            DestroyLocalObjectOnly("stale host voice", voice.gameObject);
         }
 
         CleanupLocalDestroyedPlayerReferences();
     }
 
-    private static void DestroyNetworkObjectOrLocal(string label, GameObject gameObject)
+    private static void DestroyLocalObjectOnly(string label, GameObject gameObject)
     {
         try
         {
-            if (PhotonNetwork.InRoom)
-            {
-                PhotonNetwork.Destroy(gameObject);
-                Recconect.Logger.LogInfo($"Destroyed {label} through PhotonNetwork.Destroy.");
-                return;
-            }
+            UnityEngine.Object.Destroy(gameObject);
+            Recconect.Logger.LogInfo($"Destroyed {label} locally.");
         }
         catch (Exception ex)
         {
-            Recconect.Logger.LogWarning($"PhotonNetwork.Destroy failed for {label}: {ex.Message}");
+            Recconect.Logger.LogWarning($"Local destroy failed for {label}: {ex.Message}");
         }
-
-        UnityEngine.Object.Destroy(gameObject);
     }
 
     private static void CleanupLocalDestroyedPlayerReferences()

@@ -6,6 +6,7 @@ internal sealed class RecconectConfig
 {
     internal ConfigEntry<bool> DiagnosticsEnabled { get; }
     internal ConfigEntry<bool> LogJoinState { get; }
+    internal ConfigEntry<bool> VerboseRuntimeDiagnostics { get; }
     internal ConfigEntry<bool> ExperimentalReconnectEnabled { get; }
     internal ConfigEntry<bool> ConfigureRoomTtlOnCreate { get; }
     internal ConfigEntry<bool> PreservePlayerObjectsDuringReconnect { get; }
@@ -33,6 +34,12 @@ internal sealed class RecconectConfig
             "LogJoinState",
             true,
             "Log state snapshots when the game reports a successful room join.");
+
+        VerboseRuntimeDiagnostics = config.Bind(
+            "Diagnostics",
+            "VerboseRuntimeDiagnostics",
+            false,
+            "Log very noisy player lifecycle, spawn RPC, PhotonView, and deep runtime snapshots. This is useful for short focused captures but can stall Proton/low-end sessions.");
 
         ExperimentalReconnectEnabled = config.Bind(
             "Reconnect",

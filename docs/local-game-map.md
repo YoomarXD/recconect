@@ -127,3 +127,23 @@ dotnet tool restore
 dotnet tool run ilspycmd -- -l c --disable-updatecheck "D:\SteamLibrary\steamapps\common\REPO\REPO_Data\Managed\Assembly-CSharp.dll"
 dotnet tool run ilspycmd -- --disable-updatecheck -r "D:\SteamLibrary\steamapps\common\REPO\REPO_Data\Managed" -t NetworkConnect "D:\SteamLibrary\steamapps\common\REPO\REPO_Data\Managed\Assembly-CSharp.dll"
 ```
+
+## Linux/Proton Test Notes
+
+Remote LAN test machine:
+
+- SSH target: `yoomarxd@192.168.200.3`
+- Steam app id: `3241660`
+- Detected game path: `/home/yoomarxd/snap/steam/common/.local/share/Steam/steamapps/common/REPO`
+- Steam launch option required for BepInEx/Doorstop under Proton: `WINEDLLOVERRIDES="winhttp=n,b" %command%`
+
+Remote installer and A/B commands:
+
+```powershell
+.\scripts\install-recconect-remote-linux.ps1 -NoBuild -ConfigMode Experimental -Force
+.\scripts\install-recconect-remote-linux.ps1 -FetchLog
+.\scripts\install-recconect-remote-linux.ps1 -DisableRecconect
+.\scripts\install-recconect-remote-linux.ps1 -EnableRecconect
+```
+
+As of the 2026-07-03 Linux/Proton test, the launch override was confirmed to load the game-folder `winhttp.dll`, BepInEx, and `BepInEx/plugins/YoomarXD-Recconect/Recconect.dll`. A noisy diagnostic build produced repeated `FormatHashtable` exceptions before reconnect testing; keep `Diagnostics.VerboseRuntimeDiagnostics=false` unless doing a short focused capture.

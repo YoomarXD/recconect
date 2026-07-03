@@ -8,6 +8,8 @@ param(
     [switch] $FetchLog,
     [string] $LogDestination = '',
     [string] $BepInExZipPath = '',
+    [switch] $DisableRecconect,
+    [switch] $EnableRecconect,
 
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Debug',
@@ -149,6 +151,7 @@ function New-RecconectConfigText {
 [Diagnostics]
 Enabled = true
 LogJoinState = true
+VerboseRuntimeDiagnostics = false
 
 [Reconnect]
 ExperimentalReconnectEnabled = $experimental
@@ -309,6 +312,46 @@ if ($ListGameInstalls) {
 }
 
 $resolvedGamePath = Resolve-RemoteGamePath
+
+if ($DisableRecconect -and $EnableRecconect) {
+    throw 'Pass only one of -DisableRecconect or -EnableRecconect.'
+}
+
+if ($DisableRecconect -or $EnableRecconect) {
+    $enableValue = if ($EnableRecconect) { '1' } else { '0' }
+    Invoke-RemoteBash -Echo -Script @"
+set -euo pipefail
+game=$(ConvertTo-ShellSingleQuoted $resolvedGamePath)
+plugin_folder=$(ConvertTo-ShellSingleQuoted $PluginFolderName)
+plugin_dll=$(ConvertTo-ShellSingleQuoted $PluginDllName)
+enable=$enableValue
+dll="`$game/BepInEx/plugins/`$plugin_folder/`$plugin_dll"
+disabled="`$dll.disabled"
+
+if [ "`$enable" = "1" ]; then
+  if [ -f "`$disabled" ]; then
+    mv -f "`$disabled" "`$dll"
+    echo "Enabled Recconect: `$dll"
+  elif [ -f "`$dll" ]; then
+    echo "Recconect is already enabled: `$dll"
+  else
+    echo "No Recconect DLL found to enable: `$dll" >&2
+    exit 2
+  fi
+else
+  if [ -f "`$dll" ]; then
+    mv -f "`$dll" "`$disabled"
+    echo "Disabled Recconect: `$disabled"
+  elif [ -f "`$disabled" ]; then
+    echo "Recconect is already disabled: `$disabled"
+  else
+    echo "No Recconect DLL found to disable: `$dll" >&2
+    exit 2
+  fi
+fi
+"@
+    return
+}
 
 if ($FetchLog) {
     if (-not $LogDestination) {

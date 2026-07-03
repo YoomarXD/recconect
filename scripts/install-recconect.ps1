@@ -180,6 +180,7 @@ function New-RecconectConfigText {
 [Diagnostics]
 Enabled = true
 LogJoinState = true
+VerboseRuntimeDiagnostics = false
 
 [Reconnect]
 ExperimentalReconnectEnabled = $experimental

@@ -71,6 +71,11 @@ internal static class ReconnectCoordinator
         PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
         bool isMine = photonView != null && photonView.IsMine;
         bool replacementActive = IsActorReplacementActive(photonView?.OwnerActorNr ?? -1);
+        if (!ShouldLogRuntimeDiagnostics(photonView, replacementActive))
+        {
+            return;
+        }
+
         Transform avatarTransform = avatar.transform;
         GameObject? parentObject = avatarTransform.parent == null ? null : avatarTransform.parent.gameObject;
         Recconect.Logger.LogInfo(
@@ -91,6 +96,11 @@ internal static class ReconnectCoordinator
         }
 
         PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+        if (!ShouldLogRuntimeDiagnostics(photonView, IsActorReplacementActive(photonView?.OwnerActorNr ?? -1)))
+        {
+            return;
+        }
+
         string sender = info.HasValue
             ? $"{info.Value.Sender?.ActorNumber ?? -1}:{info.Value.Sender?.NickName ?? "<null>"}"
             : "<none>";
@@ -107,13 +117,18 @@ internal static class ReconnectCoordinator
         }
 
         PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+        if (!ShouldLogRuntimeDiagnostics(photonView, IsActorReplacementActive(photonView?.OwnerActorNr ?? -1)))
+        {
+            return;
+        }
+
         Recconect.Logger.LogWarning(
             $"PlayerAvatar.{stage}: view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} isMine={photonView?.IsMine ?? false} after spawned={avatar.spawned} transform={FormatTransform(avatar.transform)} staticInstance={FormatStaticPlayerAvatar()} controller={FormatPlayerController()}");
     }
 
     internal static void LogNetworkSpawnMethod(string label, PhotonMessageInfo? info = null)
     {
-        if (!Recconect.ModConfig.DiagnosticsEnabled.Value)
+        if (!ShouldLogDeepDiagnostics())
         {
             return;
         }
@@ -128,7 +143,7 @@ internal static class ReconnectCoordinator
 
     internal static void StartDiagnosticBurst(string label, float seconds, float interval)
     {
-        if (!Recconect.ModConfig.DiagnosticsEnabled.Value || Recconect.Instance == null)
+        if (!ShouldLogDeepDiagnostics() || Recconect.Instance == null)
         {
             return;
         }
@@ -138,7 +153,7 @@ internal static class ReconnectCoordinator
 
     internal static void LogDeepDiagnosticState(string label)
     {
-        if (!Recconect.ModConfig.DiagnosticsEnabled.Value)
+        if (!ShouldLogDeepDiagnostics())
         {
             return;
         }
@@ -178,6 +193,36 @@ internal static class ReconnectCoordinator
 
         int localActor = PhotonNetwork.LocalPlayer?.ActorNumber ?? -1;
         return replacementActive || reconnecting || photonView.OwnerActorNr == localActor || photonView.IsMine;
+    }
+
+    private static bool ShouldLogRuntimeDiagnostics(PhotonView? photonView, bool replacementActive)
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value)
+        {
+            return false;
+        }
+
+        if (Recconect.ModConfig.VerboseRuntimeDiagnostics.Value)
+        {
+            return true;
+        }
+
+        if (reconnecting || replacementActive)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool ShouldLogDeepDiagnostics()
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value)
+        {
+            return false;
+        }
+
+        return Recconect.ModConfig.VerboseRuntimeDiagnostics.Value || reconnecting || actorReplacementDeadlines.Count > 0;
     }
 
     private static string CompactStackTrace()
@@ -223,7 +268,20 @@ internal static class ReconnectCoordinator
             return "<empty>";
         }
 
-        return string.Join(",", hashtable.Cast<System.Collections.DictionaryEntry>().Select(static entry => $"{entry.Key}={entry.Value}"));
+        try
+        {
+            List<string> entries = new();
+            foreach (object key in hashtable.Keys)
+            {
+                entries.Add($"{key}={hashtable[key]}");
+            }
+
+            return string.Join(",", entries);
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
     }
 
     private static string FormatStaticPlayerAvatar()

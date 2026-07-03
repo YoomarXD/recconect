@@ -32,9 +32,45 @@ internal static class ReconnectCoordinator
     private static bool reconnecting;
     private static bool allowingTerminalDisconnect;
     private static bool eventHandlerInstalled;
+    private static readonly Dictionary<int, float> actorReplacementDeadlines = new();
 
     internal static bool IsReconnecting => reconnecting;
     internal static bool ShouldBlockPhotonDisconnect => reconnecting && !allowingTerminalDisconnect;
+
+    internal static void PreparePlayerAvatarAwake(PlayerAvatar avatar)
+    {
+        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value || avatar == null)
+        {
+            return;
+        }
+
+        PhotonView? photonView = avatar.GetComponent<PhotonView>();
+        int actorNumber = photonView?.OwnerActorNr ?? -1;
+        if (!IsActorReplacementActive(actorNumber))
+        {
+            return;
+        }
+
+        int removed = RemoveDuplicateActorAvatarsBeforeAwake(actorNumber, photonView?.ViewID ?? -1, destroyLocalObjects: true);
+        if (removed > 0)
+        {
+            Recconect.Logger.LogWarning($"Prepared PlayerAvatar.Awake for replacement actor={actorNumber}, view={photonView?.ViewID ?? -1}; removed {removed} stale same-owner avatar entries before duplicate guard.");
+        }
+    }
+
+    internal static void LogPlayerAvatarLifecycle(string stage, PlayerAvatar avatar)
+    {
+        if (!Recconect.ModConfig.DiagnosticsEnabled.Value || avatar == null)
+        {
+            return;
+        }
+
+        PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+        bool isMine = photonView != null && photonView.IsMine;
+        bool replacementActive = IsActorReplacementActive(photonView?.OwnerActorNr ?? -1);
+        Recconect.Logger.LogInfo(
+            $"PlayerAvatar.{stage}: view={photonView?.ViewID ?? -1} owner={photonView?.OwnerActorNr ?? -1} isMine={isMine} replacementActive={replacementActive} isLocal={avatar.isLocal} spawned={avatar.spawned} disabled={avatar.isDisabled} unityNull={(avatar == null)} playerList={PlayerListSummary()}");
+    }
 
     internal static void InstallEventHandler()
     {
@@ -599,9 +635,12 @@ internal static class ReconnectCoordinator
     {
         try
         {
+            MarkActorReplacement(actorNumber);
+            RemoveDuplicateActorAvatarsBeforeAwake(actorNumber, exceptViewId: -1, destroyLocalObjects: false);
+
             RaiseEventOptions options = new()
             {
-                Receivers = ReceiverGroup.MasterClient
+                Receivers = ReceiverGroup.All
             };
 
             PhotonNetwork.RaiseEvent(ReplaceActorObjectsEventCode, actorNumber, options, SendOptions.SendReliable);
@@ -620,7 +659,7 @@ internal static class ReconnectCoordinator
             return;
         }
 
-        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value || !PhotonNetwork.IsMasterClient)
+        if (!Recconect.ModConfig.ExperimentalReconnectEnabled.Value)
         {
             return;
         }
@@ -639,8 +678,117 @@ internal static class ReconnectCoordinator
             return;
         }
 
-        Recconect.Logger.LogWarning($"Host received stale player replacement request for actor={actorNumber}.");
-        Recconect.Instance.StartCoroutine(HostRemoveAndRepairActorObjects(actorNumber));
+        MarkActorReplacement(actorNumber);
+        int removedLocalDuplicates = RemoveDuplicateActorAvatarsBeforeAwake(actorNumber, exceptViewId: -1, destroyLocalObjects: !PhotonNetwork.IsMasterClient);
+        if (removedLocalDuplicates > 0)
+        {
+            Recconect.Logger.LogWarning($"Marked actor={actorNumber} for replacement and removed {removedLocalDuplicates} local stale duplicate avatar entries.");
+        }
+
+        if (PhotonNetwork.IsMasterClient)
+        {
+            Recconect.Logger.LogWarning($"Host received stale player replacement request for actor={actorNumber}.");
+            Recconect.Instance.StartCoroutine(HostRemoveAndRepairActorObjects(actorNumber));
+        }
+    }
+
+    private static void MarkActorReplacement(int actorNumber)
+    {
+        if (actorNumber <= 0)
+        {
+            return;
+        }
+
+        actorReplacementDeadlines[actorNumber] = Time.realtimeSinceStartup + 15f;
+    }
+
+    private static bool IsActorReplacementActive(int actorNumber)
+    {
+        if (actorNumber <= 0 || !actorReplacementDeadlines.TryGetValue(actorNumber, out float deadline))
+        {
+            return false;
+        }
+
+        if (Time.realtimeSinceStartup <= deadline)
+        {
+            return true;
+        }
+
+        actorReplacementDeadlines.Remove(actorNumber);
+        return false;
+    }
+
+    private static int RemoveDuplicateActorAvatarsBeforeAwake(int actorNumber, int exceptViewId, bool destroyLocalObjects)
+    {
+        if (actorNumber <= 0 || GameDirector.instance == null)
+        {
+            return 0;
+        }
+
+        int removed = 0;
+        List<PlayerAvatar> avatars = GameDirector.instance.PlayerList;
+        for (int i = avatars.Count - 1; i >= 0; i--)
+        {
+            PlayerAvatar avatar = avatars[i];
+            if (avatar == null)
+            {
+                avatars.RemoveAt(i);
+                removed++;
+                continue;
+            }
+
+            PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+            if (photonView == null || photonView.OwnerActorNr != actorNumber || photonView.ViewID == exceptViewId)
+            {
+                continue;
+            }
+
+            Recconect.Logger.LogWarning($"Removing stale replacement duplicate before PlayerAvatar.Awake: actor={actorNumber}, view={photonView.ViewID}, destroyLocal={destroyLocalObjects}.");
+            avatars.RemoveAt(i);
+            removed++;
+
+            if (destroyLocalObjects)
+            {
+                try
+                {
+                    UnityEngine.Object.Destroy(avatar.gameObject);
+                }
+                catch (Exception ex)
+                {
+                    Recconect.Logger.LogInfo($"Failed to locally destroy stale duplicate avatar view={photonView.ViewID}: {ex.Message}");
+                }
+            }
+        }
+
+        return removed;
+    }
+
+    private static string PlayerListSummary()
+    {
+        try
+        {
+            if (GameDirector.instance?.PlayerList == null)
+            {
+                return "<null>";
+            }
+
+            return string.Join(
+                ",",
+                GameDirector.instance.PlayerList.Select(static avatar =>
+                {
+                    if (avatar == null)
+                    {
+                        return "null";
+                    }
+
+                    PhotonView? photonView = avatar.photonView != null ? avatar.photonView : avatar.GetComponent<PhotonView>();
+                    return $"{photonView?.OwnerActorNr ?? -1}:{photonView?.ViewID ?? -1}:spawned={avatar.spawned}:local={avatar.isLocal}";
+                }));
+        }
+        catch (Exception ex)
+        {
+            return $"<error:{ex.Message}>";
+        }
     }
 
     private static IEnumerator HostRemoveAndRepairActorObjects(int actorNumber)

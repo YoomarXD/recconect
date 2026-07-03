@@ -131,3 +131,41 @@ internal static class NetworkManagerOnPlayerEnteredRoomPatch
         ReconnectCoordinator.ScheduleHostRepairForEnteredPlayer(newPlayer);
     }
 }
+
+[HarmonyPatch(typeof(PlayerAvatar), "Awake")]
+internal static class PlayerAvatarAwakePatch
+{
+    private static void Prefix(PlayerAvatar __instance)
+    {
+        ReconnectCoordinator.PreparePlayerAvatarAwake(__instance);
+        ReconnectCoordinator.LogPlayerAvatarLifecycle("Awake:prefix", __instance);
+    }
+
+    private static void Postfix(PlayerAvatar __instance)
+    {
+        ReconnectCoordinator.LogPlayerAvatarLifecycle("Awake:postfix", __instance);
+    }
+}
+
+[HarmonyPatch(typeof(PlayerAvatar), "Start")]
+internal static class PlayerAvatarStartPatch
+{
+    private static void Prefix(PlayerAvatar __instance)
+    {
+        ReconnectCoordinator.LogPlayerAvatarLifecycle("Start:prefix", __instance);
+    }
+
+    private static void Postfix(PlayerAvatar __instance)
+    {
+        ReconnectCoordinator.LogPlayerAvatarLifecycle("Start:postfix", __instance);
+    }
+}
+
+[HarmonyPatch(typeof(PlayerAvatar), "OnDestroy")]
+internal static class PlayerAvatarOnDestroyPatch
+{
+    private static void Prefix(PlayerAvatar __instance)
+    {
+        ReconnectCoordinator.LogPlayerAvatarLifecycle("OnDestroy:prefix", __instance);
+    }
+}
